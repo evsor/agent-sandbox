@@ -1,0 +1,9 @@
+[init]
+	defaultBranch = main
+[core]
+	excludesFile = /etc/gitignore
+[pull]
+	ff = only
+[user]
+	# Add your name and email
+	useConfigOnly = true

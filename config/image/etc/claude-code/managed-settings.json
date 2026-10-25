@@ -1,0 +1,59 @@
+{
+  "env": {
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DISABLE_AUTOUPDATER": "1"
+  },
+  "forceLoginMethod": "claudeai",
+  "allowManagedPermissionRulesOnly": true,
+  "allowManagedHooksOnly": true,
+  "allowManagedMcpServersOnly": true,
+  "allowedMcpServers": [],
+  "strictKnownMarketplaces": [],
+  "disableRemoteControl": true,
+  "isolatePeerMachines": true,
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "disableBypassPermissionsMode": "disable",
+    "disableAutoMode": "disable",
+    "allow": [
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(uv *)",
+      "Bash(python3 *)",
+      "Bash(pytest *)",
+      "Bash(make *)"
+    ],
+    "ask": [
+      "Bash(npm install *)",
+      "Bash(npm i *)",
+      "Bash(npm add *)",
+      "Bash(uv add *)",
+      "Bash(uv pip install *)",
+      "Bash(pip install *)",
+      "Bash(python3 -m pip install *)",
+
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "WebFetch",
+      "WebSearch",
+
+      "Bash(git remote *)",
+      "Bash(git clone *)"
+    ],
+    "deny": [
+      "Bash(git push *)",
+      "Bash(npm publish *)",
+      "Bash(pnpm publish *)",
+      "Bash(yarn publish *)",
+      "Bash(uv publish *)",
+      "Bash(twine upload *)",
+
+      "Read(//home/node/claude-state/.credentials.json)",
+      "Edit(//etc/**)"
+    ]
+  }
+}
