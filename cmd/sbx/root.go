@@ -73,7 +73,7 @@ func setup(ctx context.Context, v *viper.Viper) error {
 	return checkRuntime(ctx)
 }
 
-// Check msb's runtime and version compatibility with the SDK
+// Check msb's runtime and version compatibility with the SDK.
 func checkRuntime(ctx context.Context) error {
 	if os.Getenv("MSB_PATH") == "" {
 		path, err := exec.LookPath("msb")
@@ -91,7 +91,7 @@ func checkRuntime(ctx context.Context) error {
 		return fmt.Errorf("resolving the msb runtime: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, rt.MSBPath, "--version")
+	cmd := exec.CommandContext(ctx, rt.MSBPath, "--version") //nolint:gosec // the resolved msb binary
 	cmd.Env = []string{}
 
 	out, err := cmd.Output()
