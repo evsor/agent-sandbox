@@ -21,12 +21,11 @@ var version = "dev"
 var errUsage = errors.New("usage")
 
 func newRootCmd() *cobra.Command {
-	// Flags and SBX_* variables configure sbx itself, never the sandbox.
 	v := viper.New()
 
 	root := &cobra.Command{
 		Use:     "sbx",
-		Short:   "Create, connect to, ship from and rebuild the Claude Code sandbox",
+		Short:   "Create, connect to, ship from and rebuild the local sandbox",
 		Version: version,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if err := cobra.NoArgs(cmd, args); err != nil {
@@ -53,7 +52,7 @@ func newRootCmd() *cobra.Command {
 	flags.String("log-level", "info", "log level: debug, info, warn or error")
 
 	if err := v.BindPFlag("log-level", flags.Lookup("log-level")); err != nil {
-		panic(err) // the flag is defined just above
+		panic(err)
 	}
 
 	v.SetEnvPrefix("SBX")
@@ -74,9 +73,8 @@ func setup(ctx context.Context, v *viper.Viper) error {
 	return checkRuntime(ctx)
 }
 
-// checkRuntime resolves the msb runtime without installing anything and refuses to run unless msb's version equals the SDK's.
+// Check msb's runtime and version compatibility with the SDK
 func checkRuntime(ctx context.Context) error {
-	// The SDK finds msb only via MSB_PATH or ~/.microsandbox/bin; the msb CLI sets MSB_PATH to itself the same way.
 	if os.Getenv("MSB_PATH") == "" {
 		path, err := exec.LookPath("msb")
 		if err != nil {
@@ -93,8 +91,8 @@ func checkRuntime(ctx context.Context) error {
 		return fmt.Errorf("resolving the msb runtime: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, rt.MSBPath, "--version") //nolint:gosec // the resolved msb binary
-	cmd.Env = []string{}                                     // sbx's environment may hold secrets, and msb needs none to print its version
+	cmd := exec.CommandContext(ctx, rt.MSBPath, "--version")
+	cmd.Env = []string{}
 
 	out, err := cmd.Output()
 	if err != nil {

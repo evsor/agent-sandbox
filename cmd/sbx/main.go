@@ -1,4 +1,4 @@
-// Command sbx creates, connects to, ships from and rebuilds a microVM sandbox for Claude Code.
+// sbx is the main entry point for the agent-sandbox CLI
 package main
 
 import (
@@ -11,9 +11,10 @@ import (
 )
 
 func main() {
-	// msb's logs, sandbox directories and volumes inherit this process's umask; its logs copy session output.
+	// Created files and directories should be accessible only by the owner
 	syscall.Umask(0o077)
 
+	// Intercept Ctrl+C and termination signals to gracefully shut down the CLI
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := newRootCmd().ExecuteContext(ctx)
 
