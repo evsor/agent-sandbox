@@ -1,0 +1,68 @@
+# The sandbox spec
+
+name = "claude-sandbox"
+image = "claude-code-msb" # tag is git short SHA
+cpus = 6
+memory_mib = 12288    # 12 GiB
+root_disk_mib = 16384 # 16 GiB
+user = "node"
+workdir = "/workspace"
+shell = "/bin/bash"
+security = "restricted"
+
+[[volumes]]
+name = "claude-workspace"
+target = "/workspace"
+kind = "disk"
+size_mib = 20480 # 20 GiB
+nosuid = true
+nodev = true
+
+[[volumes]]
+name = "claude-state"
+target = "/home/node/claude-state"
+kind = "disk"
+size_mib = 5120 # 5 GiB
+nosuid = true
+nodev = true
+
+[network]
+default_egress = "deny"
+default_ingress = "deny"
+strict = true        # SNI/Host must match the allowed name
+intercept_tls = true # hostname allows over HTTPS work only with TLS interception
+
+# Rules match in order, first match wins: denies first. No rule may have destination "host" (the gateway):
+# allowing it opens the host and forwards any DNS name upstream; denying it breaks name resolution.
+[[network.rules]]
+action = "deny"
+direction = "egress"
+destination = "private"
+
+[[network.rules]]
+action = "deny"
+direction = "egress"
+destination = "loopback"
+
+[[network.rules]]
+action = "deny"
+direction = "egress"
+destination = "link-local"
+
+[[network.rules]]
+action = "deny"
+direction = "egress"
+destination = "metadata"
+
+[[network.rules]]
+action = "deny"
+direction = "egress"
+destination = "multicast"
+
+# Claude Code API
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "api.anthropic.com"
+protocol = "tcp"
+port = "443"
