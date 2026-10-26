@@ -1,4 +1,4 @@
-// config loads the sandbox spec from sandbox.toml
+// Package config loads the sandbox spec from sandbox.toml.
 package config
 
 import (
@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Mapping toml keys to Go struct fields.
+// Config maps the TOML keys to Go struct fields.
 type Config struct {
 	Name        string   `mapstructure:"name"`
 	Image       string   `mapstructure:"image"`
@@ -29,6 +29,7 @@ type Config struct {
 	Secrets     []Secret `mapstructure:"secrets"`
 }
 
+// Volume is a named volume mounted at Target.
 type Volume struct {
 	Name    string `mapstructure:"name"`
 	Target  string `mapstructure:"target"`
@@ -38,6 +39,7 @@ type Volume struct {
 	Nodev   bool   `mapstructure:"nodev"`
 }
 
+// Network is the egress and ingress policy.
 type Network struct {
 	DefaultEgress  string `mapstructure:"default_egress"`
 	DefaultIngress string `mapstructure:"default_ingress"`
@@ -46,6 +48,7 @@ type Network struct {
 	Rules          []Rule `mapstructure:"rules"`
 }
 
+// Rule is one network policy rule.
 type Rule struct {
 	Action      string `mapstructure:"action"`
 	Direction   string `mapstructure:"direction"`
@@ -54,6 +57,7 @@ type Rule struct {
 	Port        string `mapstructure:"port"`
 }
 
+// Secret declares a credential.
 type Secret struct {
 	Name            string   `mapstructure:"name"`
 	Allow           []string `mapstructure:"allow"`
@@ -65,6 +69,7 @@ type Secret struct {
 // To be safe for the ssh config and file paths.
 var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
+// ValidName reports whether name can name the sandbox.
 func ValidName(name string) bool { return validName.MatchString(name) }
 
 // Load config from the TOML file at path; see Parse.
