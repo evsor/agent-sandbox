@@ -1,0 +1,232 @@
+{
+  "name": "test-sbx",
+  "image": {
+    "Oci": {
+      "reference": "test-sbx-msb:4706ca6",
+      "root_disk": {
+        "kind": "managed",
+        "size_mib": 16384
+      }
+    }
+  },
+  "resources": {
+    "cpus": 6,
+    "memory_mib": 12288,
+    "max_cpus": 6,
+    "max_memory_mib": 12288
+  },
+  "runtime": {
+    "workdir": "/workspace",
+    "shell": "/bin/bash",
+    "scripts": {},
+    "entrypoint": [
+      "docker-entrypoint.sh"
+    ],
+    "cmd": [
+      "bash"
+    ],
+    "hostname": null,
+    "user": "node",
+    "log_level": null,
+    "metrics_sample_interval_ms": 1000,
+    "disable_metrics_sample": false
+  },
+  "env": [
+    {
+      "key": "PATH",
+      "value": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/node/.local/bin"
+    },
+    {
+      "key": "NODE_VERSION",
+      "value": "26.12.1"
+    },
+    {
+      "key": "CLAUDE_CONFIG_DIR",
+      "value": "/home/node/claude-state"
+    },
+    {
+      "key": "USER",
+      "value": "node"
+    },
+    {
+      "key": "LOGNAME",
+      "value": "node"
+    }
+  ],
+  "labels": {},
+  "rlimits": [],
+  "mounts": [
+    {
+      "type": "Named",
+      "name": "test-sbx-workspace",
+      "guest": "/workspace",
+      "options": {
+        "readonly": false,
+        "noexec": false,
+        "nosuid": true,
+        "nodev": true
+      },
+      "stat_virtualization": "strict",
+      "host_permissions": "private",
+      "follow_root_symlinks": false
+    },
+    {
+      "type": "Named",
+      "name": "test-sbx-state",
+      "guest": "/home/node/claude-state",
+      "options": {
+        "readonly": false,
+        "noexec": false,
+        "nosuid": true,
+        "nodev": true
+      },
+      "stat_virtualization": "strict",
+      "host_permissions": "private",
+      "follow_root_symlinks": false
+    }
+  ],
+  "patches": [],
+  "network": {
+    "enabled": true,
+    "interface": {},
+    "ports": [],
+    "policy": {
+      "default_egress": "deny",
+      "default_ingress": "deny",
+      "rules": [
+        {
+          "direction": "egress",
+          "destination": {
+            "group": "private"
+          },
+          "protocols": [],
+          "ports": [],
+          "action": "deny"
+        },
+        {
+          "direction": "egress",
+          "destination": {
+            "group": "loopback"
+          },
+          "protocols": [],
+          "ports": [],
+          "action": "deny"
+        },
+        {
+          "direction": "egress",
+          "destination": {
+            "group": "link_local"
+          },
+          "protocols": [],
+          "ports": [],
+          "action": "deny"
+        },
+        {
+          "direction": "egress",
+          "destination": {
+            "group": "metadata"
+          },
+          "protocols": [],
+          "ports": [],
+          "action": "deny"
+        },
+        {
+          "direction": "egress",
+          "destination": {
+            "group": "multicast"
+          },
+          "protocols": [],
+          "ports": [],
+          "action": "deny"
+        },
+        {
+          "direction": "egress",
+          "destination": {
+            "domain": "api.anthropic.com"
+          },
+          "protocols": [
+            "tcp"
+          ],
+          "ports": [
+            {
+              "start": 443,
+              "end": 443
+            }
+          ],
+          "action": "allow"
+        }
+      ]
+    },
+    "dns": {
+      "rebind_protection": true,
+      "nameservers": [],
+      "query_timeout_ms": 5000
+    },
+    "tls": {
+      "enabled": true,
+      "intercepted_ports": [
+        443
+      ],
+      "bypass": [],
+      "verify_upstream": true,
+      "block_quic_on_intercept": true,
+      "upstream_ca_cert": [],
+      "scoped_upstream_ca_cert": [],
+      "scoped_verify_upstream": [],
+      "intercept_ca": {
+        "cert_path": null,
+        "key_path": null
+      },
+      "cache": {
+        "capacity": 1000,
+        "validity_hours": 24
+      }
+    },
+    "strict": true,
+    "secrets": {
+      "secrets": [
+        {
+          "env_var": "TEST_SBX_SECRET",
+          "value": "DUMMY-SECRET-123",
+          "placeholder": "TESTSBXPLACEHOLDER",
+          "allowed_hosts": [
+            {
+              "exact": "httpbin.org"
+            }
+          ],
+          "substitution": {
+            "headers": true,
+            "header_fields": [
+              "authorization"
+            ],
+            "query": false,
+            "body": false
+          },
+          "passthrough_hosts": [],
+          "violation_action": "block-and-log",
+          "require_tls_identity": true
+        }
+      ],
+      "violation_action": "block-and-log"
+    },
+    "max_connections": null,
+    "nat64_prefixes": [
+      "64:ff9b::/96"
+    ],
+    "trust_host_cas": false,
+    "http": {
+      "deny_response": false
+    }
+  },
+  "init": null,
+  "pull_policy": "Never",
+  "security_profile": "restricted",
+  "deployment_profile": "single_tenant",
+  "lifecycle": {
+    "ephemeral": false,
+    "max_duration_secs": null,
+    "idle_timeout_secs": null
+  },
+  "manifest_digest": "sha256:0151778c41861a32af874a8cb094c077cc820c816de38eac3397347590dbabe9",
+  "external_mount_policy": "strict"
+}
