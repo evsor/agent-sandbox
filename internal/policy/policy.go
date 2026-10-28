@@ -1,4 +1,4 @@
-// This package provides functions to enforce the baseline security and configuration policy for sandboxes.
+// Package policy provides functions to enforce the baseline security and configuration policy for sandboxes.
 // It checks for any changes that could reach or leak from the host during init or rebuild phases.
 package policy
 
@@ -43,6 +43,7 @@ const (
 	wantUser     = "node"
 )
 
+// DestKind represents the kind of network destination.
 type DestKind string
 
 const (
@@ -54,11 +55,12 @@ const (
 	kindUnknown DestKind = "unknown"
 )
 
+// ErrPolicy is returned when a policy violation is detected.
 var ErrPolicy = errors.New("policy violation")
 
 const authVarsNotAllowed = "agent credential and endpoint variables are not allowed"
 
-// Sandbox spec defined by the sandbox.toml or live configuration.
+// Spec is a sandbox spec defined by the sandbox.toml or live configuration.
 type Spec struct {
 	User           string
 	Security       string

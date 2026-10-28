@@ -10,13 +10,14 @@ import (
 	"strings"
 )
 
-// Where the state volume mounts. The image sets CLAUDE_CONFIG_DIR to it.
+// StateTarget is where the state volume mounts. The image sets CLAUDE_CONFIG_DIR to it.
 const StateTarget = "/home/node/claude-state"
 
-// Managed directory in the image.
+// ManagedDir is the managed directory in the image.
 const ManagedDir = "/etc/claude-code"
 
-// Settings files in the managed directory.
+// settingsFile is the main settings file in ManagedDir.
+// dropInDir is the directory for additional settings in ManagedDir.
 const (
 	settingsFile = "managed-settings.json"
 	dropInDir    = "managed-settings.d"
@@ -26,12 +27,12 @@ var managedOnly = []string{"allowManagedPermissionRulesOnly", "allowManagedHooks
 
 var forbiddenKeys = []string{"apiKeyHelper", "policyHelper"}
 
-// Claude should log in with subscription only.
+// IsAgentAuthVar reports whether the environment variable is an agent authentication variable for Claude. Claude should log in with subscription only.
 func IsAgentAuthVar(name string) bool {
 	return strings.HasPrefix(name, "ANTHROPIC_") || name == "CLAUDE_CODE_OAUTH_TOKEN"
 }
 
-// Checks the settings files in the managed directory.
+// CheckSettings checks the settings files in the managed directory.
 func CheckSettings(fsys fs.FS) error {
 	errs := []error{checkFile(fsys, settingsFile, true)}
 
@@ -166,7 +167,7 @@ func object(obj map[string]json.RawMessage, key string) (map[string]json.RawMess
 	return v, json.Unmarshal(raw, &v) == nil && v != nil
 }
 
-// Check entries in the managed directory.
+// CheckModes checks entries in the managed directory.
 func CheckModes(fsys fs.FS) error {
 	var errs []error
 
