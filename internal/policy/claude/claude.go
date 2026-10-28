@@ -1,4 +1,4 @@
-// Policy rules specific to Claude Code
+// Package claude defines policy rules specific to Claude Code.
 package claude
 
 import (
