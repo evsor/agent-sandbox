@@ -1,5 +1,4 @@
-// The spec and the sandbox: loading and checking config/sandbox.toml, building, checking and loading the image, and creating, starting
-// and running commands in the sandbox through the SDK.
+// Sandbox management: loading and checking config/sandbox.toml, building, checking and loading the image, and creating the sandbox.
 
 package main
 
@@ -22,7 +21,7 @@ import (
 
 const nodeHome = "/home/node"
 
-// spec is the sandbox spec of one checkout: its config/sandbox.toml.
+// spec is the sandbox spec from config/sandbox.toml.
 type spec struct {
 	repo string
 	cfg  *config.Config
@@ -32,7 +31,7 @@ type spec struct {
 func loadSpec(repo string) (*spec, error) {
 	path := filepath.Join(repo, "config", "sandbox.toml")
 
-	raw, err := os.ReadFile(path) //nolint:gosec // the spec of the checkout sbx runs from
+	raw, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("reading the spec: %w", err)
 	}
@@ -60,7 +59,7 @@ func imageTag(ctx context.Context, s *spec) (string, error) {
 	return s.cfg.Image + ":" + sha, nil
 }
 
-// ensureImage builds the checkout's image with docker, checks it and loads it into msb, unless msb already has an image under that tag.
+// ensureImage builds the checkout's image with docker, checks it and loads it into msb.
 func (a *app) ensureImage(ctx context.Context, s *spec, tag string) error {
 	_, err := msb.Image.Get(ctx, tag)
 
@@ -106,7 +105,7 @@ func (a *app) ensureImage(ctx context.Context, s *spec, tag string) error {
 	return nil
 }
 
-// checkImage runs the policy check on a built image: its managed directory, copied out of a container that is never started, and its env.
+// checkImage runs the policy check on a built image.
 func checkImage(ctx context.Context, tag string) error {
 	out, err := command(ctx, "docker", "create", tag).Output()
 	if err != nil {
@@ -170,7 +169,7 @@ func imageEnv(ctx context.Context, tag string) ([]string, error) {
 	return env, nil
 }
 
-// createSandbox creates and boots the sandbox detached, under the lock.
+// createSandbox creates the detached sandbox.
 func (a *app) createSandbox(ctx context.Context, s *spec, image string) error {
 	cfg := s.cfg
 
@@ -233,7 +232,7 @@ func (a *app) createSandbox(ctx context.Context, s *spec, image string) error {
 	return nil
 }
 
-// startSandbox connects to the sandbox, starting it detached if needed, under the lock.
+// startSandbox connects to the sandbox, starting it if needed.
 func (a *app) startSandbox(ctx context.Context) (*msb.Sandbox, error) {
 	unlock, err := a.lock()
 	if err != nil {
@@ -254,7 +253,7 @@ func (a *app) startSandbox(ctx context.Context) (*msb.Sandbox, error) {
 	return sb, nil
 }
 
-// release drops the handle and leaves the VM running: Close would stop a detached sandbox.
+// release detaches from the sandbox, leaving it running.
 func release(ctx context.Context, sb *msb.Sandbox) {
 	if err := sb.Detach(context.WithoutCancel(ctx)); err != nil {
 		slog.Warn("releasing the sandbox handle", "err", err)
@@ -293,7 +292,7 @@ func (a *app) ownMounts(ctx context.Context, s *spec) ([]string, error) {
 	return chownMounts(ctx, sb, targets)
 }
 
-// chownMounts gives node the mount roots it doesn't own yet: a new disk volume's root is root's, and msb can't set its owner.
+// chownMounts gives node the mount roots.
 func chownMounts(ctx context.Context, sb *msb.Sandbox, targets []string) ([]string, error) {
 	var changed []string
 

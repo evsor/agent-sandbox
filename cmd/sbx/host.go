@@ -1,4 +1,4 @@
-// Host-side helpers: sbx's state and lock, child processes and safe git, finding the checkout, and writing files.
+// Host-side helpers.
 
 package main
 
@@ -17,7 +17,7 @@ import (
 	"syscall"
 )
 
-// Every host git call runs with these, so fetched content can't run hooks or helpers.
+// safeGit operations.
 var safeGit = []string{
 	"-c", "core.hooksPath=/dev/null",
 	"-c", "core.fsmonitor=false",
@@ -27,7 +27,7 @@ var safeGit = []string{
 	"-c", "fetch.recurseSubmodules=false",
 }
 
-// state is what sbx records between runs, in <state dir>/state.json.
+// state is what sbx records between runs in state.json.
 type state struct {
 	Name  string `json:"name,omitempty"`  // the sandbox init created
 	Clone string `json:"clone,omitempty"` // the checkout init ran from
@@ -52,7 +52,7 @@ func (a *app) loadState() (state, error) {
 	return st, nil
 }
 
-// saveState writes the state and reports whether it changed.
+// saveState writes the state.
 func (a *app) saveState(st state) (bool, error) {
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
@@ -62,7 +62,7 @@ func (a *app) saveState(st state) (bool, error) {
 	return writeIfChanged(filepath.Join(a.stateDir, "state.json"), append(data, '\n'))
 }
 
-// lock takes the exclusive lock that serializes creating and starting the sandbox between sbx processes.
+// lock sets lock on the state directory.
 func (a *app) lock() (func(), error) {
 	f, err := os.OpenFile(filepath.Join(a.stateDir, "lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
@@ -78,9 +78,9 @@ func (a *app) lock() (func(), error) {
 	return func() { _ = f.Close() }, nil // closing releases the flock
 }
 
-// command builds a child process that logs to stderr.
+// command creates a child process that logs to stderr.
 func command(ctx context.Context, name string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // argv only, never a shell; callers pass fixed tools
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec
 	cmd.Stderr = os.Stderr
 
 	return cmd
@@ -89,7 +89,7 @@ func command(ctx context.Context, name string, args ...string) *exec.Cmd {
 // git runs host git with the safe flags and an environment without GIT_*.
 func git(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	full := append(append([]string{"-C", dir}, safeGit...), args...)
-	cmd := exec.CommandContext(ctx, "git", full...) //nolint:gosec // argv only, never a shell
+	cmd := exec.CommandContext(ctx, "git", full...) //nolint:gosec
 
 	cmd.Env = append(scrubEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0")
 	cmd.Stderr = os.Stderr
@@ -116,7 +116,7 @@ func scrubEnv(env []string) []string {
 
 var errNotCheckout = errors.New("run sbx from the agent-sandbox checkout")
 
-// repoRoot returns the top of the checkout containing the working directory, which must hold config/sandbox.toml.
+// repoRoot returns the working directory, which contains config.
 func repoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -141,9 +141,9 @@ func repoRoot() (string, error) {
 	}
 }
 
-// writeIfChanged writes data with mode 0600 unless the file already holds it, and reports whether it wrote.
+// writeIfChanged writes data with mode 0600.
 func writeIfChanged(path string, data []byte) (bool, error) {
-	old, err := os.ReadFile(path) //nolint:gosec // a path sbx builds under its own state dir
+	old, err := os.ReadFile(path) //nolint:gosec
 	if err == nil && bytes.Equal(old, data) {
 		return false, nil
 	}

@@ -24,7 +24,7 @@ func main() {
 
 	// Intercept Ctrl+C and termination signals to gracefully shut down the CLI
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	err := newRootCmd().ExecuteContext(ctx)
+	err := rootCmd().ExecuteContext(ctx)
 
 	stop()
 

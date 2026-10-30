@@ -1,4 +1,4 @@
-// The root command: sbx's own settings (flags and SBX_* env), the state directory, the sandbox name, and the msb runtime check.
+// The root command: sbx
 
 package main
 
@@ -35,7 +35,7 @@ type app struct {
 	out      io.Writer
 }
 
-func newRootCmd() *cobra.Command {
+func rootCmd() *cobra.Command {
 	a := &app{v: viper.New()}
 
 	root := &cobra.Command{
