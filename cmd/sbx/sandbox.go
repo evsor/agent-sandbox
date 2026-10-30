@@ -1,3 +1,6 @@
+// The spec and the sandbox: loading and checking config/sandbox.toml, building, checking and loading the image, and creating, starting
+// and running commands in the sandbox through the SDK.
+
 package main
 
 import (

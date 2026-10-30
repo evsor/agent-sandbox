@@ -1,3 +1,5 @@
+// The root command: sbx's own settings (flags and SBX_* env), the state directory, the sandbox name, and the msb runtime check.
+
 package main
 
 import (
@@ -24,7 +26,7 @@ var version = "dev"
 
 var errUsage = errors.New("usage")
 
-// app holds sbx's own settings. The sandbox spec never comes from here: it is read from config/sandbox.toml alone.
+// app holds sbx's settings
 type app struct {
 	v        *viper.Viper
 	name     string
@@ -38,7 +40,7 @@ func newRootCmd() *cobra.Command {
 
 	root := &cobra.Command{
 		Use:           "sbx",
-		Short:         "Create, connect to, ship from and rebuild the local sandbox",
+		Short:         "Manage the local sandbox provisioned via microsandbox",
 		Version:       version,
 		Args:          noArgs,
 		SilenceUsage:  true,
@@ -56,7 +58,7 @@ func newRootCmd() *cobra.Command {
 	})
 
 	flags := root.PersistentFlags()
-	flags.String("name", "", "sandbox name (default: init uses config/sandbox.toml's, other commands the one init recorded)")
+	flags.String("name", "", "sandbox name (default: config/sandbox.toml's)")
 	flags.String("state-dir", "", "state directory (default ~/.local/state/agent-sandbox)")
 	flags.String("log-level", "info", "log level: debug, info, warn or error")
 
@@ -130,7 +132,7 @@ func (a *app) setup(cmd *cobra.Command) error {
 	return nil
 }
 
-// useSpecName takes the sandbox name from sandbox.toml unless --name or SBX_NAME gave one.
+// useSpecName takes the sandbox name from sandbox.toml unless --name or SBX_NAME is set.
 func (a *app) useSpecName(s *spec) {
 	if !a.nameSet {
 		a.name = s.cfg.Name

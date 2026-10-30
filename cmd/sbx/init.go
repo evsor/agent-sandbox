@@ -1,3 +1,6 @@
+// The init command: checks the host and the spec, then makes sure the image and the sandbox exist, the sandbox runs and node owns the
+// volume roots.
+
 package main
 
 import (

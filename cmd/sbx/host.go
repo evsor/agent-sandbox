@@ -1,3 +1,5 @@
+// Host-side helpers: sbx's state and lock, child processes and safe git, finding the checkout, and writing files.
+
 package main
 
 import (
