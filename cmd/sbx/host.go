@@ -80,7 +80,7 @@ func (a *app) lock() (func(), error) {
 
 // command creates a child process that logs to stderr.
 func command(ctx context.Context, name string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // argv only, never a shell
 	cmd.Stderr = os.Stderr
 
 	return cmd
@@ -89,7 +89,7 @@ func command(ctx context.Context, name string, args ...string) *exec.Cmd {
 // git runs host git with the safe flags and an environment without GIT_*.
 func git(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	full := append(append([]string{"-C", dir}, safeGit...), args...)
-	cmd := exec.CommandContext(ctx, "git", full...) //nolint:gosec
+	cmd := exec.CommandContext(ctx, "git", full...) //nolint:gosec // argv only, never a shell
 
 	cmd.Env = append(scrubEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0")
 	cmd.Stderr = os.Stderr
@@ -143,7 +143,7 @@ func repoRoot() (string, error) {
 
 // writeIfChanged writes data with mode 0600.
 func writeIfChanged(path string, data []byte) (bool, error) {
-	old, err := os.ReadFile(path) //nolint:gosec
+	old, err := os.ReadFile(path) //nolint:gosec // a path sbx builds under its own state dir
 	if err == nil && bytes.Equal(old, data) {
 		return false, nil
 	}

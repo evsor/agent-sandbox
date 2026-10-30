@@ -31,7 +31,7 @@ type spec struct {
 func loadSpec(repo string) (*spec, error) {
 	path := filepath.Join(repo, "config", "sandbox.toml")
 
-	raw, err := os.ReadFile(path) //nolint:gosec
+	raw, err := os.ReadFile(path) //nolint:gosec // the spec of the checkout sbx runs from
 	if err != nil {
 		return nil, fmt.Errorf("reading the spec: %w", err)
 	}

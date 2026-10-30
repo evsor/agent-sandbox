@@ -26,7 +26,7 @@ var version = "dev"
 
 var errUsage = errors.New("usage")
 
-// app holds sbx's settings
+// app holds sbx's settings.
 type app struct {
 	v        *viper.Viper
 	name     string
