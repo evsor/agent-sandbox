@@ -72,7 +72,7 @@ func rootCmd() *cobra.Command {
 	a.v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	a.v.AutomaticEnv()
 
-	root.AddCommand(newInitCmd(a), newStatusCmd(a))
+	root.AddCommand(newInitCmd(a), newStatusCmd(a), newStopCmd(a))
 
 	return root
 }
