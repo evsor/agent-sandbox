@@ -58,7 +58,7 @@ func rootCmd() *cobra.Command {
 	})
 
 	flags := root.PersistentFlags()
-	flags.String("name", "", "sandbox name (default: config/sandbox.toml's for init, the one init recorded otherwise)")
+	flags.String("name", "", "sandbox name (default: config/sandbox.toml)")
 	flags.String("state-dir", "", "state directory (default ~/.local/state/agent-sandbox)")
 	flags.String("log-level", "info", "log level: debug, info, warn or error")
 
