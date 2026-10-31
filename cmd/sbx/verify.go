@@ -35,7 +35,7 @@ type check struct {
 func newVerifyCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "verify",
-		Short: "Check that the running sandbox meets the baseline; a failed boundary check stops it",
+		Short: "Check that the running sandbox meets the baseline. Failed check stops it.",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return a.verify(cmd.Context())
