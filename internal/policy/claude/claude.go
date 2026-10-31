@@ -1,13 +1,17 @@
-// Package claude defines policy rules specific to Claude Code.
+// Package claude defines policy rules specific to Claude Code: the checks on its managed settings, and the judgement of what its commands
+// print in the running sandbox for sbx verify.
 package claude
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"path"
 	"strings"
+
+	agent "github.com/evsor/agent-sandbox/internal/agent/claude"
 )
 
 // StateTarget is where the state volume mounts. The image sets CLAUDE_CONFIG_DIR to it.
@@ -23,7 +27,13 @@ const (
 	dropInDir    = "managed-settings.d"
 )
 
+// loginMethod is the only login allowed: the subscription.
+const loginMethod = "claudeai"
+
 var managedOnly = []string{"allowManagedPermissionRulesOnly", "allowManagedHooksOnly", "allowManagedMcpServersOnly"}
+
+// loadFailures are what Claude Code prints when a whole managed source isn't in effect. Invalid entries leave the rest enforced and aren't judged.
+var loadFailures = []string{"Managed settings failed to load", "none of its settings are in effect"}
 
 var forbiddenKeys = []string{"apiKeyHelper", "policyHelper"}
 
@@ -114,7 +124,7 @@ func checkSettings(name string, top map[string]json.RawMessage, base bool) error
 		fail("permissions and env must be objects")
 	}
 
-	if !holds(top, "forceLoginMethod", "claudeai", base) {
+	if !holds(top, "forceLoginMethod", loginMethod, base) {
 		fail(`forceLoginMethod must be "claudeai"`)
 	}
 
@@ -167,7 +177,8 @@ func object(obj map[string]json.RawMessage, key string) (map[string]json.RawMess
 	return v, json.Unmarshal(raw, &v) == nil && v != nil
 }
 
-// CheckModes checks entries in the managed directory.
+// CheckModes checks entries in the managed directory: no links, nothing writable by group or others, and everything readable by others,
+// since Claude Code silently skips a managed file its user can't read.
 func CheckModes(fsys fs.FS) error {
 	var errs []error
 
@@ -181,15 +192,79 @@ func CheckModes(fsys fs.FS) error {
 			return err
 		}
 
+		readable := fs.FileMode(0o004)
+		if d.IsDir() {
+			readable = 0o005
+		}
+
 		switch {
 		case info.Mode()&fs.ModeSymlink != 0:
 			errs = append(errs, fmt.Errorf("%s: must not be a link", name))
 		case info.Mode().Perm()&0o022 != 0:
 			errs = append(errs, fmt.Errorf("%s: must not be writable by group or others", name))
+		case info.Mode().Perm()&readable != readable:
+			errs = append(errs, fmt.Errorf("%s: must be readable by others", name))
 		}
 
 		return nil
 	})
 
 	return errors.Join(append(errs, walkErr)...)
+}
+
+// CheckManagedListing judges the entries under ManagedDir that root doesn't own, or node can write or can't read, as listed in the guest:
+// there must be none.
+func CheckManagedListing(listing string) error {
+	if entries := strings.TrimSpace(listing); entries != "" {
+		return fmt.Errorf("root must own these, and node must be able to read but not write them: %q", entries)
+	}
+
+	return nil
+}
+
+// CheckManagedLoad judges the output of `claude auth status --json`, which needs no login or model call. It reports the forced login
+// method from any settings source, so node's own settings can satisfy this; CheckManagedListing covers managed files node can't read.
+func CheckManagedLoad(stdout, stderr []byte) error {
+	for _, failure := range loadFailures {
+		if bytes.Contains(stderr, []byte(failure)) {
+			return fmt.Errorf("claude reports: %q", bytes.TrimSpace(stderr))
+		}
+	}
+
+	login, err := agent.ParseLogin(stdout)
+	if err != nil {
+		return err
+	}
+
+	if login.ForcedMethod != loginMethod {
+		return fmt.Errorf("forcedLoginMethod is %q, want %s", login.ForcedMethod, loginMethod)
+	}
+
+	return nil
+}
+
+// CheckEnv judges the output of `env` in the guest. Messages name a variable, never its value.
+func CheckEnv(env string) error {
+	var errs []error
+
+	hasPath := false
+
+	for line := range strings.Lines(env) {
+		name, _, assigned := strings.Cut(line, "=")
+		if !assigned { // the next line of a multi-line value
+			continue
+		}
+
+		hasPath = hasPath || name == "PATH"
+
+		if IsAgentAuthVar(name) {
+			errs = append(errs, fmt.Errorf("%q is set", name))
+		}
+	}
+
+	if !hasPath {
+		errs = append(errs, errors.New("the environment has no PATH, so it wasn't read"))
+	}
+
+	return errors.Join(errs...)
 }

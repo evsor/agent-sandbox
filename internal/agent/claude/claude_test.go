@@ -28,6 +28,11 @@ func TestParseLogin(t *testing.T) {
 			out:  `{"loggedIn": false, "authMethod": "none"}`,
 			want: Login{Method: "none"},
 		},
+		{
+			name: "forced login method",
+			out:  `{"loggedIn": false, "authMethod": "none", "forcedLoginMethod": "claudeai"}`,
+			want: Login{Method: "none", ForcedMethod: "claudeai"},
+		},
 		{name: "empty output", out: "", wantErr: errLogin},
 		{name: "not json", out: "Not logged in", wantErr: errLogin},
 		{name: "wrong shape", out: `[]`, wantErr: errLogin},

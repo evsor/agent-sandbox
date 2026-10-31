@@ -6,7 +6,8 @@
 //	sbx [flags] <command>
 //
 // Run sbx init from the agent-sandbox checkout. It checks the host, builds the image from config/, runs the policy check on the spec
-// and the image, and creates and starts the sandbox; re-running it changes nothing. sbx --help lists the commands and flags.
+// and the image, creates and starts the sandbox, and verifies it. Re-running it creates nothing that already exists, but a failed
+// boundary check in the verify step stops the sandbox. sbx --help lists the commands and flags.
 package main
 
 import (

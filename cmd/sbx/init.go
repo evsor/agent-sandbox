@@ -1,5 +1,5 @@
 // The init command: checks the host and the spec, then makes sure the image and the sandbox exist, the sandbox runs and node owns the
-// volume roots.
+// volume roots, and ends by verifying the sandbox.
 
 package main
 
@@ -18,7 +18,7 @@ import (
 func newInitCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: "Check the host, build the image from config/, and create and start the sandbox (re-runnable)",
+		Short: "Check the host, build the image from config/, create and start the sandbox, and verify it (re-runnable)",
 		Args:  noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return a.init(cmd.Context())
@@ -77,7 +77,7 @@ func (a *app) init(ctx context.Context) error {
 
 	a.report(status, filepath.Join(a.stateDir, "state.json"))
 
-	return nil
+	return a.verify(ctx)
 }
 
 func (a *app) checkPrerequisites(ctx context.Context) error {
