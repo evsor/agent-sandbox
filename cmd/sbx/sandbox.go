@@ -1,4 +1,4 @@
-// Sandbox management: the spec, the image, creating the sandbox, and reading a running one's config and background sessions.
+// Sandbox management operations
 
 package main
 
@@ -359,7 +359,7 @@ func liveSpec(ctx context.Context, h *msb.SandboxHandle) (policy.Spec, error) {
 	})
 }
 
-// backgroundSessions lists the background sessions, running claude as node in its home: never in a repo, whose config it would load.
+// backgroundSessions lists the background sessions, running claude as node in its home.
 func backgroundSessions(ctx context.Context, sb *msb.Sandbox) ([]agent.Session, error) {
 	out, err := guest(ctx, sb, "node", "claude", "agents", "--json")
 	if err != nil {

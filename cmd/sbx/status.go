@@ -1,4 +1,4 @@
-// The status command: reports on the sandbox without ever starting it.
+// The status command: reports on the sandbox
 
 package main
 

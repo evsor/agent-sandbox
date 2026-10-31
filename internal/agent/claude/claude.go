@@ -1,5 +1,4 @@
-// Package claude reads the output of Claude Code's commands. It runs nothing and holds no rules: cmd/sbx runs the commands, and
-// internal/policy/claude holds the rules.
+// Package claude reads the output of Claude Code's commands and returns structured data.
 package claude
 
 import (
@@ -44,7 +43,7 @@ type Session struct {
 	State string `json:"state"`
 }
 
-// ParseSessions reads the output of `claude agents --json`, which also lists interactive sessions, and returns the background ones.
+// ParseSessions reads the output of `claude agents --json` and returns only the background sessions.
 func ParseSessions(out []byte) ([]Session, error) {
 	var sessions []Session
 	if err := json.Unmarshal(out, &sessions); err != nil {
