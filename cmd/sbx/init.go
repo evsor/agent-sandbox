@@ -1,5 +1,5 @@
-// The init command: checks the host and the spec, then makes sure the image and the sandbox exist, the sandbox runs and node owns the
-// volume roots, and ends by verifying the sandbox.
+// The init command: checks the host and the spec, writes sbx's SSH files, then makes sure the image and the sandbox exist, the sandbox
+// runs and node owns the volume roots, and ends by verifying the sandbox.
 
 package main
 
@@ -13,6 +13,8 @@ import (
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 
 	"github.com/spf13/cobra"
+
+	"github.com/evsor/agent-sandbox/internal/ssh"
 )
 
 func newInitCmd(a *app) *cobra.Command {
@@ -48,6 +50,10 @@ func (a *app) init(ctx context.Context) error {
 	}
 
 	a.report("ok", "policy check: config/sandbox.toml")
+
+	if err := a.setupSSH(ctx); err != nil {
+		return err
+	}
 
 	tag, err := imageTag(ctx, s)
 	if err != nil {
@@ -101,6 +107,56 @@ func (a *app) checkPrerequisites(ctx context.Context) error {
 	a.report("ok", "prerequisites: KVM, msb "+msb.SDKVersion()+", docker, git, gh, ssh, ssh-keygen")
 
 	return nil
+}
+
+// setupSSH writes sbx's SSH files with its real paths and prints the Include line when the ssh config changes.
+func (a *app) setupSSH(ctx context.Context) error {
+	// The ssh config runs from any directory, so its paths must be absolute.
+	stateDir, err := filepath.Abs(a.stateDir)
+	if err != nil {
+		return fmt.Errorf("finding the state directory: %w", err)
+	}
+
+	sbx, err := sbxPath()
+	if err != nil {
+		return err
+	}
+
+	proxy := sbx + " connect --name " + a.name
+
+	if a.v.GetString("state-dir") != "" {
+		proxy += " --state-dir " + stateDir
+	}
+
+	dir := ssh.Dir(stateDir)
+
+	made, err := ssh.Setup(ctx, ssh.Options{Dir: dir, Name: a.name, ProxyCommand: proxy})
+	if err != nil {
+		return fmt.Errorf("setting up the ssh files: %w", err)
+	}
+
+	for _, path := range made {
+		a.report("made", path)
+
+		// sbx never reads ~/.ssh, so it can't tell whether the Include is already there.
+		if filepath.Base(path) == ssh.Config {
+			fmt.Fprintf(a.out, "\nAdd this line at the top of ~/.ssh/config, once:\n  Include %s\n\n", path)
+		}
+	}
+
+	a.report("ok", "ssh files in "+dir)
+
+	return nil
+}
+
+// sbxPath is where sbx is installed: the ssh config runs it from there.
+func sbxPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("finding the home directory: %w", err)
+	}
+
+	return filepath.Join(home, ".local", "bin", "sbx"), nil
 }
 
 // ensureSandbox creates the sandbox if it doesn't exist, or starts it if it's stopped, then gives node the mount roots.
