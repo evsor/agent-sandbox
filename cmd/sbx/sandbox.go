@@ -1,4 +1,4 @@
-// Sandbox management: loading and checking config/sandbox.toml, building, checking and loading the image, and creating the sandbox.
+// Sandbox management operations
 
 package main
 
@@ -14,12 +14,15 @@ import (
 
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 
+	agent "github.com/evsor/agent-sandbox/internal/agent/claude"
 	"github.com/evsor/agent-sandbox/internal/config"
 	"github.com/evsor/agent-sandbox/internal/policy"
 	"github.com/evsor/agent-sandbox/internal/policy/claude"
 )
 
 const nodeHome = "/home/node"
+
+var errNotRunning = errors.New("sandbox is not running")
 
 // spec is the sandbox spec from config/sandbox.toml.
 type spec struct {
@@ -253,6 +256,25 @@ func (a *app) startSandbox(ctx context.Context) (*msb.Sandbox, error) {
 	return sb, nil
 }
 
+// runningSandbox connects to the sandbox only if it is running: an exec into a stopped one would start it, then stop it again on exit.
+func (a *app) runningSandbox(ctx context.Context) (*msb.Sandbox, *msb.SandboxHandle, error) {
+	h, err := msb.GetSandbox(ctx, a.name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("finding sandbox %s: %w", a.name, err)
+	}
+
+	if h.Status() != msb.SandboxStatusRunning {
+		return nil, nil, fmt.Errorf("%w: %s is %s", errNotRunning, a.name, h.Status())
+	}
+
+	sb, err := h.Connect(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("connecting to sandbox %s: %w", a.name, err)
+	}
+
+	return sb, h, nil
+}
+
 // release detaches from the sandbox, leaving it running.
 func release(ctx context.Context, sb *msb.Sandbox) {
 	if err := sb.Detach(context.WithoutCancel(ctx)); err != nil {
@@ -323,4 +345,30 @@ func chownMounts(ctx context.Context, sb *msb.Sandbox, targets []string) ([]stri
 	}
 
 	return changed, nil
+}
+
+// liveSpec reads the sandbox's live config.
+func liveSpec(ctx context.Context, h *msb.SandboxHandle) (policy.Spec, error) {
+	return policy.FromConfigJSON([]byte(h.ConfigJSON()), func(name string) (string, error) {
+		v, err := msb.GetVolume(ctx, name)
+		if err != nil {
+			return "", fmt.Errorf("finding the volume: %w", err)
+		}
+
+		return string(v.Kind()), nil
+	})
+}
+
+// backgroundSessions lists the background sessions, running claude as node in its home.
+func backgroundSessions(ctx context.Context, sb *msb.Sandbox) ([]agent.Session, error) {
+	out, err := guest(ctx, sb, "node", "claude", "agents", "--json")
+	if err != nil {
+		return nil, err
+	}
+
+	if !out.Success() {
+		return nil, fmt.Errorf("claude agents: %q", strings.TrimSpace(out.Stderr()))
+	}
+
+	return agent.ParseSessions(out.StdoutBytes())
 }

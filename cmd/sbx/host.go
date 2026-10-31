@@ -29,8 +29,9 @@ var safeGit = []string{
 
 // state is what sbx records between runs in state.json.
 type state struct {
-	Name  string `json:"name,omitempty"`  // the sandbox init created
-	Clone string `json:"clone,omitempty"` // the checkout init ran from
+	Name       string `json:"name,omitempty"`        // the sandbox init created
+	Clone      string `json:"clone,omitempty"`       // the checkout init ran from
+	RebuiltSHA string `json:"rebuilt_sha,omitempty"` // the commit last rebuilt
 }
 
 func (a *app) loadState() (state, error) {

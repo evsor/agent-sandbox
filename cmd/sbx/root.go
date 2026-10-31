@@ -58,7 +58,7 @@ func rootCmd() *cobra.Command {
 	})
 
 	flags := root.PersistentFlags()
-	flags.String("name", "", "sandbox name (default: config/sandbox.toml's)")
+	flags.String("name", "", "sandbox name (default: config/sandbox.toml)")
 	flags.String("state-dir", "", "state directory (default ~/.local/state/agent-sandbox)")
 	flags.String("log-level", "info", "log level: debug, info, warn or error")
 
@@ -72,7 +72,7 @@ func rootCmd() *cobra.Command {
 	a.v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	a.v.AutomaticEnv()
 
-	root.AddCommand(newInitCmd(a))
+	root.AddCommand(newInitCmd(a), newStatusCmd(a))
 
 	return root
 }
