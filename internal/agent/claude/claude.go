@@ -12,15 +12,17 @@ const backgroundKind = "background"
 
 // Login is the login state from `claude auth status --json`.
 type Login struct {
-	LoggedIn bool
-	Method   string
+	LoggedIn     bool
+	Method       string
+	ForcedMethod string // the forced login method, from any settings source; empty if none
 }
 
 // ParseLogin reads the output of `claude auth status --json`.
 func ParseLogin(out []byte) (Login, error) {
 	var doc struct {
-		LoggedIn   *bool  `json:"loggedIn"`
-		AuthMethod string `json:"authMethod"`
+		LoggedIn          *bool  `json:"loggedIn"`
+		AuthMethod        string `json:"authMethod"`
+		ForcedLoginMethod string `json:"forcedLoginMethod"`
 	}
 
 	if err := json.Unmarshal(out, &doc); err != nil {
@@ -31,7 +33,7 @@ func ParseLogin(out []byte) (Login, error) {
 		return Login{}, errors.New("parsing claude auth status: no loggedIn field")
 	}
 
-	return Login{LoggedIn: *doc.LoggedIn, Method: doc.AuthMethod}, nil
+	return Login{LoggedIn: *doc.LoggedIn, Method: doc.AuthMethod, ForcedMethod: doc.ForcedLoginMethod}, nil
 }
 
 // Session is one background session from `claude agents --json`.

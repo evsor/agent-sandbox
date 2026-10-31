@@ -1,5 +1,5 @@
-// Tests for Claude Code's rules: one case per managed-settings rule, in the base file and in drop-ins, and per mode rule, each with a
-// passing and a failing case.
+// Tests for Claude Code's rules: one case per managed-settings rule, in the base file and in drop-ins, per mode rule and per check on the
+// guest's output, each with a passing and a failing case.
 //
 // They run with make test, so in CI on every PR; a failing case fails the build.
 
@@ -145,7 +145,10 @@ func TestCheckSettings(t *testing.T) {
 func TestCheckModes(t *testing.T) {
 	t.Parallel()
 
-	const skill = "skills/review/SKILL.md"
+	const (
+		skills = "skills"
+		skill  = "skills/review/SKILL.md"
+	)
 
 	file := func(mode fs.FileMode) *fstest.MapFile { return &fstest.MapFile{Data: []byte("{}"), Mode: mode} }
 	dir := func(mode fs.FileMode) *fstest.MapFile { return &fstest.MapFile{Mode: fs.ModeDir | mode} }
@@ -156,14 +159,21 @@ func TestCheckModes(t *testing.T) {
 		wantErr string
 	}{
 		{name: "read-only for others passes", fsys: fstest.MapFS{
-			settingsFile: file(0o644), "skills": dir(0o755), skill: file(0o644), "CLAUDE.md": file(0o640),
+			settingsFile: file(0o644), skills: dir(0o755), skill: file(0o644), "CLAUDE.md": file(0o644),
 		}},
 		{name: "a group-writable file", fsys: fstest.MapFS{settingsFile: file(0o664)}, wantErr: settingsFile + ": must not be writable"},
 		{name: "an other-writable file", fsys: fstest.MapFS{"CLAUDE.md": file(0o646)}, wantErr: "CLAUDE.md: must not be writable"},
 		{name: "a writable directory", fsys: fstest.MapFS{
-			"skills": dir(0o777), skill: file(0o644),
+			skills: dir(0o777), skill: file(0o644),
 		}, wantErr: "skills: must not be writable"},
 		{name: "a writable file deep down", fsys: fstest.MapFS{skill: file(0o666)}, wantErr: skill},
+		{name: "a file others can't read", fsys: fstest.MapFS{settingsFile: file(0o600)}, wantErr: settingsFile + ": must be readable"},
+		{name: "a directory others can't list", fsys: fstest.MapFS{
+			skills: dir(0o711), skill: file(0o644),
+		}, wantErr: "skills: must be readable"},
+		{name: "a directory others can't enter", fsys: fstest.MapFS{
+			skills: dir(0o744), skill: file(0o644),
+		}, wantErr: "skills: must be readable"},
 		{name: "a link anywhere", fsys: fstest.MapFS{
 			"skills/review": {Data: []byte("/home/node/claude-state/skill"), Mode: fs.ModeSymlink | 0o777},
 		}, wantErr: "skills/review: must not be a link"},
@@ -182,6 +192,111 @@ func TestCheckModes(t *testing.T) {
 			}
 
 			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestCheckManagedListing(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		listing string
+		wantErr string
+	}{
+		{name: "nothing listed passes"},
+		{name: "only a newline passes", listing: "\n"},
+		{name: "an entry fails", listing: "/etc/claude-code\n", wantErr: "/etc/claude-code"},
+		{name: "every entry is named", listing: "/etc/claude-code/CLAUDE.md\n/etc/claude-code/skills\n", wantErr: "CLAUDE.md\\n/etc/claude-code/skills"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CheckManagedListing(tt.listing)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestCheckManagedLoad(t *testing.T) {
+	t.Parallel()
+
+	const loaded = `{"loggedIn": false, "authMethod": "none", "forcedLoginMethod": "claudeai"}`
+
+	tests := []struct {
+		name    string
+		stdout  string
+		stderr  string
+		wantErr string
+	}{
+		{name: "loaded and logged out passes", stdout: loaded},
+		{name: "loaded and logged in passes", stdout: `{"loggedIn": true, "authMethod": "claude.ai", "forcedLoginMethod": "claudeai"}`},
+		{name: "no forced method", stdout: `{"loggedIn": false, "authMethod": "none"}`, wantErr: "forcedLoginMethod is"},
+		{name: "another forced method", stdout: `{"loggedIn": false, "forcedLoginMethod": "console"}`, wantErr: "console"},
+		{name: "failed to load, on stderr", stdout: loaded, stderr: "Managed settings failed to load; policies are NOT in effect", wantErr: "NOT in effect"},
+		{name: "unparsable file, on stderr", stderr: "/etc/claude-code/managed-settings.json: Managed settings document could not be parsed as a JSON object; none of its settings are in effect.\n", wantErr: "could not be parsed"},
+		{name: "a harmless line on stderr passes", stdout: loaded, stderr: "Managed settings (remote): not fetched"},
+		{name: "unparsable output", stdout: "Not logged in", wantErr: "parsing claude auth status"},
+		{name: "no output", wantErr: "parsing claude auth status"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CheckManagedLoad([]byte(tt.stdout), []byte(tt.stderr))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestCheckEnv(t *testing.T) {
+	t.Parallel()
+
+	const path = "PATH=/usr/bin\n"
+
+	tests := []struct {
+		name    string
+		env     string
+		wantErr string
+	}{
+		{name: "a plain environment passes", env: path + "CLAUDE_CONFIG_DIR=/home/node/claude-state\nNODE_VERSION=26\n"},
+		{name: "an API key", env: path + "ANTHROPIC_API_KEY=DUMMY-SECRET-123\n", wantErr: "ANTHROPIC_API_KEY"},
+		{name: "an auth token", env: path + "ANTHROPIC_AUTH_TOKEN=DUMMY-SECRET-123\n", wantErr: "ANTHROPIC_AUTH_TOKEN"},
+		{name: "an endpoint", env: path + "ANTHROPIC_BASE_URL=https://proxy\n", wantErr: "ANTHROPIC_BASE_URL"},
+		{name: "an OAuth token", env: path + "CLAUDE_CODE_OAUTH_TOKEN=DUMMY-SECRET-123\n", wantErr: "CLAUDE_CODE_OAUTH_TOKEN"},
+		{name: "a value naming a credential passes", env: path + "NOTE=ANTHROPIC_API_KEY\n"},
+		{name: "a line of a multi-line value passes", env: path + "NOTE=first\nANTHROPIC_DUMMY-SECRET-123\n"},
+		{name: "empty output fails closed", wantErr: "no PATH"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CheckEnv(tt.env)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorContains(t, err, tt.wantErr)
+			assert.NotContains(t, err.Error(), "DUMMY-SECRET-123")
 		})
 	}
 }
