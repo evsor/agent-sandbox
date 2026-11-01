@@ -103,6 +103,7 @@ func (a *app) checks(ctx context.Context, sb *msb.Sandbox, h *msb.SandboxHandle)
 		}},
 		{"host: sandbox directory 0700", false, a.checkSandboxDir},
 		{"host: volume disk.raw 0600", false, func() error { return checkDiskModes(ctx, live.Mounts) }},
+		{"host: no secret value in a guest process environment", false, func() error { return a.checkSecretsAbsent(ctx, sb, live.Secrets) }},
 	}
 }
 
@@ -170,4 +171,15 @@ func checkDiskModes(ctx context.Context, mounts []policy.Mount) error {
 
 		return hostfs.CheckMode(filepath.Join(v.Path(), "disk.raw"), 0o600)
 	})
+}
+
+// checkSecretsAbsent reads every guest process's environment and looks for the values here on the host, so they never enter the guest.
+func (a *app) checkSecretsAbsent(ctx context.Context, sb *msb.Sandbox, secrets []policy.Secret) error {
+	// As root, to read every process. A process that exits mid-scan makes find exit non-zero, so its exit status says nothing.
+	out, err := guest(ctx, sb, rootUser, "find", "/proc", "-mindepth", "2", "-maxdepth", "2", "-name", "environ", "-exec", "cat", "{}", "+")
+	if err != nil {
+		return err
+	}
+
+	return policy.CheckSecretsAbsent(out.StdoutBytes(), secrets, a.secret)
 }

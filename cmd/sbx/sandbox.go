@@ -56,8 +56,8 @@ func (s *spec) check() error {
 }
 
 // imageTag is the spec's image tagged with the checkout's short SHA.
-func imageTag(ctx context.Context, s *spec) (string, error) {
-	sha, err := gitOut(ctx, s.repo, "rev-parse", "--short", "HEAD")
+func (a *app) imageTag(ctx context.Context, s *spec) (string, error) {
+	sha, err := a.gitOut(ctx, s.repo, "rev-parse", "--short", "HEAD")
 	if err != nil {
 		return "", err
 	}
@@ -78,14 +78,14 @@ func (a *app) ensureImage(ctx context.Context, s *spec, tag string) error {
 		return fmt.Errorf("finding image %s: %w", tag, err)
 	}
 
-	build := command(ctx, "docker", "build", "-t", tag, filepath.Join(s.repo, "config"))
+	build := a.command(ctx, "docker", "build", "-t", tag, filepath.Join(s.repo, "config"))
 	build.Stdout = os.Stderr
 
 	if err := build.Run(); err != nil {
 		return fmt.Errorf("docker build: %w", err)
 	}
 
-	if err := checkImage(ctx, tag); err != nil {
+	if err := a.checkImage(ctx, tag); err != nil {
 		return err
 	}
 
@@ -98,7 +98,7 @@ func (a *app) ensureImage(ctx context.Context, s *spec, tag string) error {
 	defer func() { _ = os.RemoveAll(tmp) }()
 
 	tar := filepath.Join(tmp, "image.tar")
-	if err := command(ctx, "docker", "save", "-o", tar, tag).Run(); err != nil {
+	if err := a.command(ctx, "docker", "save", "-o", tar, tag).Run(); err != nil {
 		return fmt.Errorf("docker save: %w", err)
 	}
 
@@ -112,8 +112,8 @@ func (a *app) ensureImage(ctx context.Context, s *spec, tag string) error {
 }
 
 // checkImage runs the policy check on a built image.
-func checkImage(ctx context.Context, tag string) error {
-	out, err := command(ctx, "docker", "create", tag).Output()
+func (a *app) checkImage(ctx context.Context, tag string) error {
+	out, err := a.command(ctx, "docker", "create", tag).Output()
 	if err != nil {
 		return fmt.Errorf("docker create: %w", err)
 	}
@@ -121,7 +121,7 @@ func checkImage(ctx context.Context, tag string) error {
 	id := strings.TrimSpace(string(out))
 
 	defer func() {
-		if err := command(context.WithoutCancel(ctx), "docker", "rm", id).Run(); err != nil {
+		if err := a.command(context.WithoutCancel(ctx), "docker", "rm", id).Run(); err != nil {
 			slog.Warn("removing the check container", "container", id, "err", err)
 		}
 	}()
@@ -134,7 +134,7 @@ func checkImage(ctx context.Context, tag string) error {
 
 	// No trailing slash or -L on the source, so a link is copied as a link.
 	dir := filepath.Join(tmp, "managed")
-	if err := command(ctx, "docker", "cp", "-q", id+":"+claude.ManagedDir, dir).Run(); err != nil {
+	if err := a.command(ctx, "docker", "cp", "-q", id+":"+claude.ManagedDir, dir).Run(); err != nil {
 		return fmt.Errorf("docker cp %s: %w", claude.ManagedDir, err)
 	}
 
@@ -148,7 +148,7 @@ func checkImage(ctx context.Context, tag string) error {
 		return fmt.Errorf("image %s: %w: %s must be a real directory", tag, policy.ErrPolicy, claude.ManagedDir)
 	}
 
-	env, err := imageEnv(ctx, tag)
+	env, err := a.imageEnv(ctx, tag)
 	if err != nil {
 		return err
 	}
@@ -161,8 +161,8 @@ func checkImage(ctx context.Context, tag string) error {
 }
 
 // imageEnv returns the image's env as NAME=value entries.
-func imageEnv(ctx context.Context, tag string) ([]string, error) {
-	out, err := command(ctx, "docker", "image", "inspect", "--format", "{{json .Config.Env}}", tag).Output()
+func (a *app) imageEnv(ctx context.Context, tag string) ([]string, error) {
+	out, err := a.command(ctx, "docker", "image", "inspect", "--format", "{{json .Config.Env}}", tag).Output()
 	if err != nil {
 		return nil, fmt.Errorf("docker image inspect: %w", err)
 	}
@@ -175,8 +175,8 @@ func imageEnv(ctx context.Context, tag string) ([]string, error) {
 	return env, nil
 }
 
-// createSandbox creates the detached sandbox.
-func (a *app) createSandbox(ctx context.Context, s *spec, image string) error {
+// createSandbox creates the detached sandbox, handing msb the secret values, which never enter the guest.
+func (a *app) createSandbox(ctx context.Context, s *spec, image string, secrets map[string]string) error {
 	cfg := s.cfg
 
 	env, err := cfg.EnvMap()
@@ -208,6 +208,18 @@ func (a *app) createSandbox(ctx context.Context, s *spec, image string) error {
 		})
 	}
 
+	headers := true
+	entries := make([]msb.SecretEntry, 0, len(cfg.Secrets))
+
+	for _, sec := range cfg.Secrets {
+		entries = append(entries, msb.Secret.Env(sec.Name, secrets[sec.Name], msb.SecretEnvOptions{
+			Allow:           sec.Allow,
+			Placeholder:     sec.Placeholder,
+			Substitution:    msb.SecretSubstitution{Headers: &headers, HeaderFields: sec.HeaderFields},
+			ViolationAction: msb.ViolationAction(sec.ViolationAction),
+		}))
+	}
+
 	unlock, err := a.lock()
 	if err != nil {
 		return err
@@ -227,6 +239,7 @@ func (a *app) createSandbox(ctx context.Context, s *spec, image string) error {
 		msb.WithEnv(env),
 		msb.WithMounts(mounts),
 		msb.WithNetwork(network),
+		msb.WithSecrets(entries...),
 		msb.WithDetached(),
 	)
 	if err != nil {
@@ -381,6 +394,16 @@ func liveSpec(ctx context.Context, h *msb.SandboxHandle) (policy.Spec, error) {
 	})
 }
 
+// liveSecrets reads the secret declarations from the sandbox's live config, without their values.
+func liveSecrets(h *msb.SandboxHandle) ([]policy.Secret, error) {
+	live, err := policy.FromConfigJSON([]byte(h.ConfigJSON()), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return live.Secrets, nil
+}
+
 // backgroundSessions lists the background sessions, running claude as node in its home.
 func backgroundSessions(ctx context.Context, sb *msb.Sandbox) ([]agent.Session, error) {
 	out, err := guestStdout(ctx, sb, policy.NodeUser, agent.Command, agent.SessionsArgs...)
@@ -389,4 +412,39 @@ func backgroundSessions(ctx context.Context, sb *msb.Sandbox) ([]agent.Session, 
 	}
 
 	return agent.ParseSessions([]byte(out))
+}
+
+// confirmSessions lists the background sessions and asks before an action stops them.
+func (a *app) confirmSessions(ctx context.Context, action string) error {
+	sb, _, err := a.runningSandbox(ctx)
+	if errors.Is(err, errNotRunning) || msb.IsKind(err, msb.ErrSandboxNotFound) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	defer release(ctx, sb)
+
+	sessions, err := backgroundSessions(ctx, sb)
+	if err != nil {
+		return err
+	}
+
+	if len(sessions) == 0 {
+		return nil
+	}
+
+	fmt.Fprintf(a.out, "%s stops %d background session(s):\n", action, len(sessions))
+
+	for _, s := range sessions {
+		fmt.Fprintf(a.out, "  %q  %q  %q  %q\n", s.ID, s.State, s.Name, s.Cwd)
+	}
+
+	if !a.ask("Continue?") {
+		return errors.New("cancelled")
+	}
+
+	return nil
 }

@@ -183,6 +183,48 @@ func TestCheckRootDisk(t *testing.T) {
 	}
 }
 
+func TestCheckSecretsAbsent(t *testing.T) {
+	t.Parallel()
+
+	const (
+		environs = "PATH=/usr/bin\x00GH_TOKEN=placeholder\x00"
+		value    = "DUMMY-SECRET-123"
+	)
+
+	secrets := []Secret{{Name: "ONE"}, {Name: "TWO"}}
+	values := map[string]string{"ONE": "DUMMY-SECRET-456", "TWO": value}
+
+	tests := []struct {
+		name     string
+		environs string
+		secrets  []Secret
+		values   map[string]string
+		wantErr  string
+	}{
+		{name: "no value in the guest", environs: environs, secrets: secrets, values: values},
+		{name: "no secrets, nothing read", environs: ""},
+		{name: "a value in the guest", environs: environs + "LEAK=" + value + "\x00", secrets: secrets, values: values, wantErr: "the value of TWO is in"},
+		{name: "nothing read", environs: "", secrets: secrets, values: values, wantErr: "read no process environment"},
+		{name: "a variable unset on the host", environs: environs, secrets: secrets, values: map[string]string{"ONE": "x"}, wantErr: "TWO is not set"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CheckSecretsAbsent([]byte(tt.environs), tt.secrets, func(name string) string { return tt.values[name] })
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.NotContains(t, err.Error(), value)
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestEachMount(t *testing.T) {
 	t.Parallel()
 
