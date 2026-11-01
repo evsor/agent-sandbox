@@ -1,4 +1,4 @@
-// guest judges and parses what commands print in the running sandbox.
+// guest checks and parses what commands print in the running sandbox.
 
 package policy
 
@@ -16,7 +16,7 @@ const NodeUID = "1000"
 // rootDiskMiB is the root disk size verify requires, whatever the spec says, so a smaller spec fails.
 const rootDiskMiB = 16384
 
-// CheckProcStatus judges /proc/self/status: the guest user is uid 1000 and can't gain privileges.
+// CheckProcStatus checks /proc/self/status: the guest user is uid 1000 and can't gain privileges.
 func CheckProcStatus(status string) error {
 	fields := map[string]string{}
 
@@ -37,7 +37,7 @@ func CheckProcStatus(status string) error {
 	return nil
 }
 
-// CheckProcMounts judges /proc/mounts: every mount is there, as ext4 with nosuid and nodev.
+// CheckProcMounts checks /proc/mounts: every mount is there, as ext4 with nosuid and nodev.
 func CheckProcMounts(table string, mounts []Mount) error {
 	return EachMount(mounts, func(m Mount) error {
 		mounted := false
@@ -64,7 +64,7 @@ func CheckProcMounts(table string, mounts []Mount) error {
 	})
 }
 
-// CheckWritable judges the paths the guest user can write, as listed by find: every mount must be among them.
+// CheckWritable checks the paths the guest user can write, as listed by find: every mount must be among them.
 func CheckWritable(listing string, mounts []Mount) error {
 	writable := strings.Fields(listing)
 
@@ -99,7 +99,7 @@ func ParseDF(out string) (uint64, uint64, error) {
 	return used, size, nil
 }
 
-// CheckRootDisk judges the output of df with DFArgs on the root filesystem.
+// CheckRootDisk checks the output of df with DFArgs on the root filesystem.
 func CheckRootDisk(df string) error {
 	_, size, err := ParseDF(df)
 	if err != nil {

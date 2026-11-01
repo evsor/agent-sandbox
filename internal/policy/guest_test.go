@@ -1,4 +1,4 @@
-// Tests for judging what guest commands print: one case per way each check can pass or fail, on output in the shape the guest prints it.
+// Tests for checking what guest commands print: one case per way each check can pass or fail, on output in the shape the guest prints it.
 
 package policy
 

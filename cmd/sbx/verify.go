@@ -127,7 +127,7 @@ func (a *app) runChecks(checks []check) (int, bool) {
 	return failed, boundary
 }
 
-// checkManagedLoad judges the output whatever the exit status: `claude auth status` exits 1 when not logged in.
+// checkManagedLoad checks the output whatever the exit status: `claude auth status` exits 1 when not logged in.
 func checkManagedLoad(ctx context.Context, sb *msb.Sandbox) error {
 	out, err := guest(ctx, sb, policy.NodeUser, agent.Command, agent.AuthStatusArgs...)
 	if err != nil {

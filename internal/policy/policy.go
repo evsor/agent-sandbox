@@ -1,5 +1,5 @@
 // Package policy provides functions to enforce the baseline security and configuration policy for sandboxes.
-// It checks for any changes that could reach or leak from the host during init or rebuild phases, and judges what commands print in the
+// It checks for any changes that could reach or leak from the host during init or rebuild phases, and checks what commands print in the
 // running sandbox.
 package policy
 
@@ -75,7 +75,7 @@ type Spec struct {
 	Secrets        []Secret
 	EnvNames       []string
 	Strings        []string // every config string except secret values, scanned for "${"
-	Image          string   // informational: the check doesn't judge it
+	Image          string   // informational: the check ignores it
 }
 
 // Mount is a guest mount. Type is "named" for named volumes and Kind their volume kind ("disk", "dir").

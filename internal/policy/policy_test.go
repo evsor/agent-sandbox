@@ -1,5 +1,5 @@
 // Tests for the generic rules: one case per rule in Check and CheckImageEnv, the repo's own sandbox.toml and managed settings
-// passing, and FromConfig mapping every field Check judges (live_test.go tests FromConfigJSON against it).
+// passing, and FromConfig mapping every field Check uses (live_test.go tests FromConfigJSON against it).
 //
 // They run with make test, so in CI on every PR; a failing case fails the build.
 

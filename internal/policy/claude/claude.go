@@ -1,4 +1,4 @@
-// Package claude defines policy rules specific to Claude Code: the checks on its managed settings, and the judgement of what its commands
+// Package claude defines policy rules specific to Claude Code: the checks on its managed settings, and the checks on what its commands
 // print in the running sandbox for sbx verify.
 package claude
 
@@ -32,7 +32,7 @@ const loginMethod = "claudeai"
 
 var managedOnly = []string{"allowManagedPermissionRulesOnly", "allowManagedHooksOnly", "allowManagedMcpServersOnly"}
 
-// loadFailures are what Claude Code prints when a whole managed source isn't in effect. Invalid entries leave the rest enforced and aren't judged.
+// loadFailures are what Claude Code prints when a whole managed source isn't in effect. Invalid entries leave the rest enforced and aren't checked.
 var loadFailures = []string{"Managed settings failed to load", "none of its settings are in effect"}
 
 var forbiddenKeys = []string{"apiKeyHelper", "policyHelper"}
@@ -212,7 +212,7 @@ func CheckModes(fsys fs.FS) error {
 	return errors.Join(append(errs, walkErr)...)
 }
 
-// CheckManagedListing judges the entries under ManagedDir that root doesn't own, or node can write or can't read, as listed in the guest:
+// CheckManagedListing checks the entries under ManagedDir that root doesn't own, or node can write or can't read, as listed in the guest:
 // there must be none.
 func CheckManagedListing(listing string) error {
 	if entries := strings.TrimSpace(listing); entries != "" {
@@ -222,7 +222,7 @@ func CheckManagedListing(listing string) error {
 	return nil
 }
 
-// CheckManagedLoad judges the output of `claude auth status --json`, which needs no login or model call. It reports the forced login
+// CheckManagedLoad checks the output of `claude auth status --json`, which needs no login or model call. It reports the forced login
 // method from any settings source, so node's own settings can satisfy this; CheckManagedListing covers managed files node can't read.
 func CheckManagedLoad(stdout, stderr []byte) error {
 	for _, failure := range loadFailures {
@@ -243,7 +243,7 @@ func CheckManagedLoad(stdout, stderr []byte) error {
 	return nil
 }
 
-// CheckEnv judges the output of `env` in the guest. Messages name a variable, never its value.
+// CheckEnv checks the output of `env` in the guest. Messages name a variable, never its value.
 func CheckEnv(env string) error {
 	var errs []error
 
