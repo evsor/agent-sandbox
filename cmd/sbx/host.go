@@ -3,18 +3,16 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
+
+	"github.com/evsor/agent-sandbox/internal/hostfs"
 )
 
 // safeGit operations.
@@ -34,49 +32,27 @@ type state struct {
 	RebuiltSHA string `json:"rebuilt_sha,omitempty"` // the commit last rebuilt
 }
 
+// statePath is the state file.
+func (a *app) statePath() string {
+	return filepath.Join(a.stateDir, "state.json")
+}
+
 func (a *app) loadState() (state, error) {
 	var st state
 
-	data, err := os.ReadFile(filepath.Join(a.stateDir, "state.json"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return st, nil
-	}
+	err := hostfs.ReadJSON(a.statePath(), &st)
 
-	if err != nil {
-		return st, fmt.Errorf("reading state: %w", err)
-	}
-
-	if err := json.Unmarshal(data, &st); err != nil {
-		return st, fmt.Errorf("parsing state: %w", err)
-	}
-
-	return st, nil
+	return st, err
 }
 
-// saveState writes the state.
+// saveState writes the state and reports whether it changed.
 func (a *app) saveState(st state) (bool, error) {
-	data, err := json.MarshalIndent(st, "", "  ")
-	if err != nil {
-		return false, fmt.Errorf("encoding state: %w", err)
-	}
-
-	return writeIfChanged(filepath.Join(a.stateDir, "state.json"), append(data, '\n'))
+	return hostfs.WriteJSON(a.statePath(), st)
 }
 
-// lock sets lock on the state directory.
+// lock takes the lock on the state directory.
 func (a *app) lock() (func(), error) {
-	f, err := os.OpenFile(filepath.Join(a.stateDir, "lock"), os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("opening the lock: %w", err)
-	}
-
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		_ = f.Close()
-
-		return nil, fmt.Errorf("taking the lock: %w", err)
-	}
-
-	return func() { _ = f.Close() }, nil // closing releases the flock
+	return hostfs.Lock(filepath.Join(a.stateDir, "lock"))
 }
 
 // command creates a child process that logs to stderr.
@@ -90,10 +66,9 @@ func command(ctx context.Context, name string, args ...string) *exec.Cmd {
 // git runs host git with the safe flags and an environment without GIT_*.
 func git(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	full := append(append([]string{"-C", dir}, safeGit...), args...)
-	cmd := exec.CommandContext(ctx, "git", full...) //nolint:gosec // argv only, never a shell
+	cmd := command(ctx, "git", full...)
 
 	cmd.Env = append(scrubEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0")
-	cmd.Stderr = os.Stderr
 
 	return cmd
 }
@@ -126,7 +101,7 @@ func repoRoot() (string, error) {
 
 	for {
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			if _, err := os.Stat(filepath.Join(dir, "config", "sandbox.toml")); err != nil {
+			if _, err := os.Stat(filepath.Join(dir, specPath)); err != nil {
 				return "", errNotCheckout
 			}
 
@@ -140,18 +115,4 @@ func repoRoot() (string, error) {
 
 		dir = parent
 	}
-}
-
-// writeIfChanged writes data with mode 0600.
-func writeIfChanged(path string, data []byte) (bool, error) {
-	old, err := os.ReadFile(path) //nolint:gosec // a path sbx builds under its own state dir
-	if err == nil && bytes.Equal(old, data) {
-		return false, nil
-	}
-
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return false, fmt.Errorf("writing %s: %w", path, err)
-	}
-
-	return true, nil
 }

@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/evsor/agent-sandbox/internal/policy"
 	"github.com/evsor/agent-sandbox/internal/ssh"
 )
 
@@ -27,21 +27,16 @@ or, after adding "Include ~/.local/state/agent-sandbox/ssh/config" at the top of
 "ssh claude-sandbox" and VS Code Remote-SSH. The sandbox keeps running after the connection closes.`
 
 func newConnectCmd(a *app) *cobra.Command {
-	return &cobra.Command{
-		Use:   "connect",
-		Short: "The ssh ProxyCommand: ssh and VS Code run this; you don't",
-		Long:  connectLong,
-		Args:  noArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return a.connect(cmd.Context())
-		},
-	}
+	cmd := newCmd("connect", "The ssh ProxyCommand: ssh and VS Code run this; you don't", a.connect)
+	cmd.Long = connectLong
+
+	return cmd
 }
 
 // connect serves one SSH connection. stdout is the SSH transport, so nothing else may write to it.
 func (a *app) connect(ctx context.Context) error {
 	if a.name == "" {
-		return errors.New("no sandbox recorded: run sbx init")
+		return errNoSandbox
 	}
 
 	dir := ssh.Dir(a.stateDir)
@@ -62,7 +57,7 @@ func (a *app) connect(ctx context.Context) error {
 	srv, err := sb.SSH().PrepareServer(ctx,
 		msb.WithSSHHostKeyPath(filepath.Join(dir, ssh.HostKey)),
 		msb.WithSSHAuthorizedKeysPath(filepath.Join(dir, ssh.AuthorizedKeys)),
-		msb.WithSSHServerUser("node"), // every login lands as node, whatever user the client asks for
+		msb.WithSSHServerUser(policy.NodeUser), // every login lands as node, whatever user the client asks for
 	)
 	if err != nil {
 		return fmt.Errorf("preparing the SSH server: %w", err)
