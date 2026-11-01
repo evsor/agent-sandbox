@@ -52,12 +52,9 @@ default_egress = "deny"
 default_ingress = "deny"
 strict = true
 intercept_tls = true
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "example.com"
-protocol = "tcp"
-port = "443"
+deny = ["private"]
+allow_domains = ["example.com"]
+allow_ips = ["1.1.1.1"]
 [[secrets]]
 name = "GITHUB_PAT"
 allow = ["github.com"]
@@ -72,7 +69,9 @@ violation_action = "block-and-log"
 				assert.Equal(t, uint32(1024), cfg.MemoryMiB)
 				assert.Equal(t, uint32(2048), cfg.RootDiskMiB)
 				assert.Equal(t, Volume{Name: "v", Target: "/w", Kind: "disk", SizeMiB: 10, Nosuid: true, Nodev: true}, cfg.Volumes[0])
-				assert.Equal(t, Rule{Action: "allow", Direction: "egress", Destination: "example.com", Protocol: "tcp", Port: "443"}, cfg.Network.Rules[0])
+				assert.Equal(t, []string{"private"}, cfg.Network.Deny)
+				assert.Equal(t, []string{"example.com"}, cfg.Network.AllowDomains)
+				assert.Equal(t, []string{"1.1.1.1"}, cfg.Network.AllowIPs)
 				assert.True(t, cfg.Network.Strict)
 				assert.True(t, cfg.Network.InterceptTLS)
 				assert.Equal(t, "GITHUB_PAT", cfg.Secrets[0].Name, "secret names keep their case")
@@ -85,6 +84,13 @@ violation_action = "block-and-log"
 		{name: "rejects a name that could inject ssh config", body: "name = \"sb\\nProxyCommand x\"\nimage = \"i\"\n", wantErr: "want lowercase"},
 		{name: "rejects an env entry without =", body: "name = \"sb\"\nimage = \"i\"\nenv = [\"NOVALUE\"]\n", wantErr: "want NAME=value"},
 		{name: "rejects invalid TOML", body: "name = ", wantErr: "reading"},
+		{name: "rejects a rule table", body: "name = \"sb\"\nimage = \"i\"\n[[network.rules]]\naction = \"allow\"\n", wantErr: "rules"},
+		{name: "rejects an address in allow_domains", body: "name = \"sb\"\nimage = \"i\"\n[network]\nallow_domains = [\"1.1.1.1\"]\n", wantErr: "allow_domains"},
+		{name: "rejects a range in allow_domains", body: "name = \"sb\"\nimage = \"i\"\n[network]\nallow_domains = [\"1.1.1.0/24\"]\n", wantErr: "allow_domains"},
+		{name: "rejects a host in allow_ips", body: "name = \"sb\"\nimage = \"i\"\n[network]\nallow_ips = [\"example.com\"]\n", wantErr: "allow_ips"},
+		{name: "rejects a zone in allow_ips", body: "name = \"sb\"\nimage = \"i\"\n[network]\nallow_ips = [\"fe80::1%eth0\"]\n", wantErr: "allow_ips"},
+		{name: "rejects a zone in allow_domains", body: "name = \"sb\"\nimage = \"i\"\n[network]\nallow_domains = [\"fe80::1%eth0\"]\n", wantErr: "allow_domains"},
+		{name: "rejects a group in allow_ips", body: "name = \"sb\"\nimage = \"i\"\n[network]\nallow_ips = [\"public\"]\n", wantErr: "allow_ips"},
 	}
 
 	for _, tt := range tests {
@@ -117,6 +123,18 @@ func TestLoad_repoFile(t *testing.T) {
 	require.Len(t, cfg.Secrets, 1)
 	assert.Equal(t, "GITHUB_PAT", cfg.Secrets[0].Name)
 	assert.Equal(t, []string{"GH_TOKEN=" + cfg.Secrets[0].Placeholder}, cfg.Env)
+}
+
+func TestNetwork_Rules(t *testing.T) {
+	t.Parallel()
+
+	network := Network{Deny: []string{"private"}, AllowDomains: []string{"example.com"}, AllowIPs: []string{"1.1.1.1"}}
+
+	assert.Equal(t, []Rule{
+		{Action: "deny", Direction: "egress", Destination: "private"},
+		{Action: "allow", Direction: "egress", Destination: "example.com", Protocol: "tcp", Port: "443"},
+		{Action: "allow", Direction: "egress", Destination: "1.1.1.1", Protocol: "tcp", Port: "443"},
+	}, network.Rules())
 }
 
 func TestConfig_EnvMap(t *testing.T) {

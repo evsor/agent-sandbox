@@ -5,12 +5,16 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/spf13/viper"
 )
+
+const egress = "egress"
 
 // Config maps the TOML keys to Go struct fields.
 type Config struct {
@@ -41,20 +45,66 @@ type Volume struct {
 
 // Network is the egress and ingress policy.
 type Network struct {
-	DefaultEgress  string `mapstructure:"default_egress"`
-	DefaultIngress string `mapstructure:"default_ingress"`
-	Strict         bool   `mapstructure:"strict"`
-	InterceptTLS   bool   `mapstructure:"intercept_tls"`
-	Rules          []Rule `mapstructure:"rules"`
+	DefaultEgress  string   `mapstructure:"default_egress"`
+	DefaultIngress string   `mapstructure:"default_ingress"`
+	Strict         bool     `mapstructure:"strict"`
+	InterceptTLS   bool     `mapstructure:"intercept_tls"`
+	Deny           []string `mapstructure:"deny"`          // egress groups
+	AllowDomains   []string `mapstructure:"allow_domains"` // hosts and .suffixes, on tcp:443
+	AllowIPs       []string `mapstructure:"allow_ips"`     // addresses and CIDR ranges, on tcp:443
 }
 
 // Rule is one network policy rule.
 type Rule struct {
-	Action      string `mapstructure:"action"`
-	Direction   string `mapstructure:"direction"`
-	Destination string `mapstructure:"destination"`
-	Protocol    string `mapstructure:"protocol"`
-	Port        string `mapstructure:"port"`
+	Action      string
+	Direction   string
+	Destination string
+	Protocol    string
+	Port        string
+}
+
+// Rules expands the lists into policy rules. The first match wins, so the denies come first.
+func (n Network) Rules() []Rule {
+	rules := make([]Rule, 0, len(n.Deny)+len(n.AllowDomains)+len(n.AllowIPs))
+
+	for _, dest := range n.Deny {
+		rules = append(rules, Rule{Action: "deny", Direction: egress, Destination: dest})
+	}
+
+	for _, dest := range slices.Concat(n.AllowDomains, n.AllowIPs) {
+		rules = append(rules, Rule{Action: "allow", Direction: egress, Destination: dest, Protocol: "tcp", Port: "443"})
+	}
+
+	return rules
+}
+
+// validate keeps each allow list to its own kind: the SDK reads a destination by its form, so an address in allow_domains would
+// otherwise become an address allow unnoticed.
+func (n Network) validate() error {
+	for _, dest := range n.AllowDomains {
+		if isAddress(dest) || strings.Contains(dest, "/") {
+			return fmt.Errorf("allow_domains entry %q: want a host or a .suffix", dest)
+		}
+	}
+
+	for _, dest := range n.AllowIPs {
+		if !isAddress(dest) || strings.Contains(dest, "%") { // the SDK reads an address with a zone as a name
+			return fmt.Errorf("allow_ips entry %q: want an address or a CIDR range", dest)
+		}
+	}
+
+	return nil
+}
+
+// isAddress reports whether dest is an IP address or a CIDR range.
+func isAddress(dest string) bool {
+	if _, err := netip.ParseAddr(dest); err == nil {
+		return true
+	}
+
+	_, err := netip.ParsePrefix(dest)
+
+	return err == nil
 }
 
 // Secret declares a credential.
@@ -110,6 +160,10 @@ func Parse(raw []byte) (*Config, error) {
 	}
 
 	if _, err := cfg.EnvMap(); err != nil {
+		return nil, err
+	}
+
+	if err := cfg.Network.validate(); err != nil {
 		return nil, err
 	}
 

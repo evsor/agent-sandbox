@@ -148,6 +148,43 @@ func TestFromConfigJSON(t *testing.T) {
 	})
 }
 
+// The form msb stores an address allow in reaches the check.
+func TestLiveRule_addressAllow(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		cidr    string
+		wantErr string
+	}{
+		{name: "a public address passes", cidr: "8.8.8.8/32"},
+		{name: "a private range fails", cidr: "10.0.0.0/24", wantErr: notPublic},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var r liveRule
+
+			require.NoError(t, json.Unmarshal([]byte(`{"action": "allow", "direction": "egress", "destination": {"cidr": "`+tt.cidr+`"},
+				"protocols": ["tcp"], "ports": [{"start": 443, "end": 443}]}`), &r))
+
+			spec := validSpec()
+			spec.Rules = append(spec.Rules, r.rule())
+
+			err := Check(spec)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
 func TestLiveDestination(t *testing.T) {
 	t.Parallel()
 

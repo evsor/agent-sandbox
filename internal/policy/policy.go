@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"net/netip"
 	"slices"
 	"strings"
 
@@ -33,6 +34,32 @@ const (
 	allowProtocol = "tcp"
 	allowPort     = "443"
 )
+
+// The widest ranges an address allow may name: about a provider's block, not a share of the internet.
+const (
+	minPrefix4 = 16
+	minPrefix6 = 32
+)
+
+// ipv6Unicast is the part of IPv6 assigned for public use. Outside it are the forms that stand for IPv4 addresses, such as NAT64's
+// 64:ff9b::/96, which would open all of IPv4 at once.
+var ipv6Unicast = netip.MustParsePrefix("2000::/3")
+
+// reservedRanges are the special-purpose ranges that the remaining checks let through.
+var reservedRanges = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("2001::/23"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"),
+}
 
 const (
 	namedMount = "named"
@@ -125,7 +152,7 @@ func FromConfig(cfg *config.Config, raw []byte) Spec {
 		})
 	}
 
-	for _, r := range cfg.Network.Rules {
+	for _, r := range cfg.Network.Rules() {
 		kind, dest := classify(r.Destination)
 		rule := Rule{Action: r.Action, Direction: r.Direction, DestKind: kind, Dest: dest}
 
@@ -289,8 +316,7 @@ func checkRules(rules []Rule, fail func(string, ...any)) map[string]bool {
 
 		switch r.Action {
 		case actionDeny:
-			plain := r.Direction == egress && len(r.Protocols) == 0 && len(r.Ports) == 0
-			if !seenAllow && plain && r.DestKind == kindGroup {
+			if checkDeny(i, r, fail) && !seenAllow {
 				denied[r.Dest] = true
 			}
 		case actionAllow:
@@ -303,6 +329,15 @@ func checkRules(rules []Rule, fail func(string, ...any)) map[string]bool {
 	}
 
 	return denied
+}
+
+// checkDeny checks a deny and reports whether it covers a whole group: every egress port and protocol.
+func checkDeny(i int, r Rule, fail func(string, ...any)) bool {
+	if r.DestKind != kindGroup && r.DestKind != kindUnknown { // an unknown destination has already failed
+		fail("rule %d: deny must name a group, got %s %s", i, r.DestKind, r.Dest)
+	}
+
+	return r.DestKind == kindGroup && r.Direction == egress && len(r.Protocols) == 0 && len(r.Ports) == 0
 }
 
 func checkAllow(i int, r Rule, fail func(string, ...any)) {
@@ -323,9 +358,41 @@ func checkAllow(i int, r Rule, fail func(string, ...any)) {
 		if !narrowSuffix(strings.TrimPrefix(r.Dest, ".")) {
 			fail("rule %d: suffix %s needs at least two labels, none empty and none holding \"*\"", i, r.Dest)
 		}
+	case kindIP, kindCIDR:
+		if !narrowPublic(r.Dest) {
+			fail("rule %d: %s: want a public address, or a public range of at least /%d for IPv4 and /%d for IPv6", i, r.Dest, minPrefix4, minPrefix6)
+		}
 	default:
-		fail("rule %d: allow must name a host, got %s %s", i, r.DestKind, r.Dest)
+		fail("rule %d: allow must name a host or a public address, got %s %s", i, r.DestKind, r.Dest)
 	}
+}
+
+// narrowPublic reports whether dest, an address or a CIDR range, is public and small enough to stand for a service rather than a large
+// part of the internet. An address allow isn't tied to a name, so it opens every site served from the range. The denies aren't relied on
+// for non-public addresses: nothing shows the private group alone covers the gateway.
+func narrowPublic(dest string) bool {
+	prefix, err := netip.ParsePrefix(dest)
+	if err != nil {
+		addr, err := netip.ParseAddr(dest)
+		if err != nil || addr.Zone() != "" {
+			return false
+		}
+
+		prefix = netip.PrefixFrom(addr, addr.BitLen())
+	}
+
+	prefix = prefix.Masked()
+	addr := prefix.Addr()
+
+	if addr.Is4() {
+		if prefix.Bits() < minPrefix4 || !addr.IsGlobalUnicast() || addr.IsPrivate() {
+			return false
+		}
+	} else if prefix.Bits() < minPrefix6 || !ipv6Unicast.Contains(addr) {
+		return false
+	}
+
+	return !slices.ContainsFunc(reservedRanges, prefix.Overlaps)
 }
 
 func checkSecrets(spec Spec, fail func(string, ...any)) {

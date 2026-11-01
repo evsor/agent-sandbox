@@ -34,128 +34,41 @@ default_ingress = "deny"
 strict = true        # SNI/Host must match the allowed name
 intercept_tls = true # hostname allows over HTTPS work only with TLS interception
 
-# Rules match in order, first match wins: denies first. No rule may have destination "host" (the gateway):
-# allowing it opens the host and forwards any DNS name upstream; denying it breaks name resolution.
-[[network.rules]]
-action = "deny"
-direction = "egress"
-destination = "private"
+# Egress groups denied before any allow. Never list "host" (the gateway): denying it breaks name resolution.
+deny = ["private", "loopback", "link-local", "metadata", "multicast"]
 
-[[network.rules]]
-action = "deny"
-direction = "egress"
-destination = "loopback"
+# Hosts the guest may reach, on tcp:443 only. ".example.com" also matches its subdomains.
+allow_domains = [
+  # Claude API, also the WebFetch safety check (Claude Code network docs)
+  "api.anthropic.com",
+  # Subscription login (Claude Code network docs)
+  "claude.ai",
+  # OAuth token exchange and refresh, and the API docs (Claude Code network docs)
+  "platform.claude.com",
+  # Claude Code docs lookups (Claude Code network docs)
+  "code.claude.com",
+  # Git over HTTPS, reached with the read-only token (GitHub docs)
+  "github.com",
+  # gh and the REST API, reached with the read-only token (GitHub docs)
+  "api.github.com",
+  # Archive downloads, where github.com redirects them (GitHub docs)
+  "codeload.github.com",
+  # Downloads GitHub serves from another host (the domain list at api.github.com/meta)
+  "objects.githubusercontent.com",
+  # Actions run logs for gh run view, where api.github.com redirects them (seen by following the redirect)
+  "results-receiver.actions.githubusercontent.com",
+  # npm packages (npm docs)
+  "registry.npmjs.org",
+  # Python package index (PyPI docs)
+  "pypi.org",
+  # Python package downloads (PyPI docs)
+  "files.pythonhosted.org",
+]
 
-[[network.rules]]
-action = "deny"
-direction = "egress"
-destination = "link-local"
-
-[[network.rules]]
-action = "deny"
-direction = "egress"
-destination = "metadata"
-
-[[network.rules]]
-action = "deny"
-direction = "egress"
-destination = "multicast"
-
-# Claude API, also the WebFetch safety check (Claude Code network docs)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "api.anthropic.com"
-protocol = "tcp"
-port = "443"
-
-# Subscription login (Claude Code network docs)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "claude.ai"
-protocol = "tcp"
-port = "443"
-
-# OAuth token exchange and refresh, and the API docs (Claude Code network docs)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "platform.claude.com"
-protocol = "tcp"
-port = "443"
-
-# Claude Code docs lookups (Claude Code network docs)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "code.claude.com"
-protocol = "tcp"
-port = "443"
-
-# Git over HTTPS, reached with the read-only token (GitHub docs)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "github.com"
-protocol = "tcp"
-port = "443"
-
-# gh and the REST API, reached with the read-only token (GitHub docs)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "api.github.com"
-protocol = "tcp"
-port = "443"
-
-# Archive downloads, where github.com redirects them (GitHub docs)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "codeload.github.com"
-protocol = "tcp"
-port = "443"
-
-# Downloads GitHub serves from another host (the domain list at api.github.com/meta)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "objects.githubusercontent.com"
-protocol = "tcp"
-port = "443"
-
-# Actions run logs for gh run view, where api.github.com redirects them (seen by following the redirect)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "results-receiver.actions.githubusercontent.com"
-protocol = "tcp"
-port = "443"
-
-# npm packages (npm docs)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "registry.npmjs.org"
-protocol = "tcp"
-port = "443"
-
-# Python package index (PyPI docs)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "pypi.org"
-protocol = "tcp"
-port = "443"
-
-# Python package downloads (PyPI docs)
-[[network.rules]]
-action = "allow"
-direction = "egress"
-destination = "files.pythonhosted.org"
-protocol = "tcp"
-port = "443"
+# Public addresses or ranges the guest may reach, on tcp:443 only. Prefer a domain: an address opens every site it holds a
+# valid certificate for, not one. TLS interception needs a name, so a client must send the server's name while connecting to
+# the address (curl --resolve): a bare https://<address> is cut, and the name doesn't resolve unless allow_domains lists it.
+allow_ips = []
 
 # The read-only GitHub token. Its value comes from this variable in sbx's environment and never enters the guest.
 [[secrets]]
