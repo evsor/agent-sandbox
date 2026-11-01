@@ -25,7 +25,9 @@
       "Bash(uv *)",
       "Bash(python3 *)",
       "Bash(pytest *)",
-      "Bash(make *)"
+      "Bash(make *)",
+      "WebFetch(domain:code.claude.com)",
+      "WebFetch(domain:platform.claude.com)"
     ],
     "ask": [
       "Bash(npm install *)",
@@ -38,7 +40,6 @@
 
       "Bash(curl *)",
       "Bash(wget *)",
-      "WebFetch",
       "WebSearch",
 
       "Bash(git remote *)",

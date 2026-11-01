@@ -225,6 +225,158 @@ func TestCheckSecretsAbsent(t *testing.T) {
 	}
 }
 
+func TestProbeArgs(t *testing.T) {
+	t.Parallel()
+
+	args := ProbeArgs("https://x/", "-H", "Host: y")
+	assert.Equal(t, []string{"-H", "Host: y", "https://x/"}, args[len(args)-3:])
+	assert.Contains(t, args, "%{http_code}")
+}
+
+func TestCheckAnswered(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		status  string
+		wantErr bool
+	}{
+		{name: "a success", status: "200"},
+		{name: "any HTTP status is an answer", status: "404"},
+		{name: "no answer", status: "000", wantErr: true},
+		{name: "empty", status: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CheckAnswered(tt.status)
+			if tt.wantErr {
+				require.Error(t, err)
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestCheckBlocked(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		exit    int
+		status  string
+		wantErr bool
+	}{
+		{name: "no such name", exit: 6, status: "000"},
+		{name: "connection refused", exit: 7, status: "000"},
+		{name: "cut while receiving", exit: 56, status: "000"},
+		{name: "the host answered", exit: 0, status: "200", wantErr: true},
+		{name: "a failure after an answer", exit: 56, status: "200", wantErr: true},
+		{name: "a timeout", exit: 28, status: "000", wantErr: true},
+		{name: "curl is missing", exit: 127, status: "", wantErr: true},
+		{name: "a bad certificate", exit: 60, status: "000", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CheckBlocked(tt.exit, tt.status)
+			if tt.wantErr {
+				require.Error(t, err)
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestCheckUnresolved(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		exit    int
+		stdout  string
+		wantErr bool
+	}{
+		{name: "not found", exit: 2},
+		{name: "resolved", exit: 0, stdout: "1.2.3.4 x\n", wantErr: true},
+		{name: "getent is missing", exit: 127, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CheckUnresolved(tt.exit, tt.stdout)
+			if tt.wantErr {
+				require.Error(t, err)
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	secrets := []Secret{{Name: "A"}, {Name: "B", Placeholder: "PH"}}
+
+	got, err := Placeholder(secrets, "B")
+	require.NoError(t, err)
+	assert.Equal(t, "PH", got)
+
+	_, err = Placeholder(secrets, "A")
+	require.Error(t, err, "no placeholder")
+
+	_, err = Placeholder(secrets, "C")
+	require.Error(t, err, "no such secret")
+}
+
+func TestCheckIsPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	secrets := []Secret{{Name: "S", Placeholder: "PH"}}
+
+	tests := []struct {
+		name    string
+		printed string
+		secret  string
+		wantErr bool
+	}{
+		{name: "the placeholder", printed: "PH\n", secret: "S"},
+		{name: "another value", printed: "DUMMY-SECRET-123\n", secret: "S", wantErr: true},
+		{name: "no such secret", printed: "PH\n", secret: "T", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CheckIsPlaceholder(tt.printed, secrets, tt.secret)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), "DUMMY", "errors never carry the variable")
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestEachMount(t *testing.T) {
 	t.Parallel()
 

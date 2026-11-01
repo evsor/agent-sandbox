@@ -1,36 +1,5 @@
 {
-  "name": "test-sbx",
-  "image": {
-    "Oci": {
-      "reference": "test-sbx-msb:4706ca6",
-      "root_disk": {
-        "kind": "managed",
-        "size_mib": 16384
-      }
-    }
-  },
-  "resources": {
-    "cpus": 6,
-    "memory_mib": 12288,
-    "max_cpus": 6,
-    "max_memory_mib": 12288
-  },
-  "runtime": {
-    "workdir": "/workspace",
-    "shell": "/bin/bash",
-    "scripts": {},
-    "entrypoint": [
-      "docker-entrypoint.sh"
-    ],
-    "cmd": [
-      "bash"
-    ],
-    "hostname": null,
-    "user": "node",
-    "log_level": null,
-    "metrics_sample_interval_ms": 1000,
-    "disable_metrics_sample": false
-  },
+  "deployment_profile": "single_tenant",
   "env": [
     {
       "key": "PATH",
@@ -51,182 +20,396 @@
     {
       "key": "LOGNAME",
       "value": "node"
-    }
-  ],
-  "labels": {},
-  "rlimits": [],
-  "mounts": [
-    {
-      "type": "Named",
-      "name": "test-sbx-workspace",
-      "guest": "/workspace",
-      "options": {
-        "readonly": false,
-        "noexec": false,
-        "nosuid": true,
-        "nodev": true
-      },
-      "stat_virtualization": "strict",
-      "host_permissions": "private",
-      "follow_root_symlinks": false
     },
     {
-      "type": "Named",
-      "name": "test-sbx-state",
-      "guest": "/home/node/claude-state",
-      "options": {
-        "readonly": false,
-        "noexec": false,
-        "nosuid": true,
-        "nodev": true
-      },
-      "stat_virtualization": "strict",
-      "host_permissions": "private",
-      "follow_root_symlinks": false
+      "key": "GH_TOKEN",
+      "value": "SBX-GITHUB-PAT-PLACEHOLDER"
     }
   ],
-  "patches": [],
+  "external_mount_policy": "strict",
+  "image": {
+    "Oci": {
+      "reference": "test-sbx-msb:8294c46",
+      "root_disk": {
+        "kind": "managed",
+        "size_mib": 16384
+      }
+    }
+  },
+  "init": null,
+  "labels": {},
+  "lifecycle": {
+    "ephemeral": false,
+    "idle_timeout_secs": null,
+    "max_duration_secs": null
+  },
+  "manifest_digest": "sha256:73f649839c4c9cafb359dcfcab2576fbb1082076190e6da431d813844ec534b0",
+  "mounts": [
+    {
+      "follow_root_symlinks": false,
+      "guest": "/workspace",
+      "host_permissions": "private",
+      "name": "test-sbx-workspace",
+      "options": {
+        "nodev": true,
+        "noexec": false,
+        "nosuid": true,
+        "readonly": false
+      },
+      "stat_virtualization": "strict",
+      "type": "Named"
+    },
+    {
+      "follow_root_symlinks": false,
+      "guest": "/home/node/claude-state",
+      "host_permissions": "private",
+      "name": "test-sbx-state",
+      "options": {
+        "nodev": true,
+        "noexec": false,
+        "nosuid": true,
+        "readonly": false
+      },
+      "stat_virtualization": "strict",
+      "type": "Named"
+    }
+  ],
+  "name": "test-sbx",
   "network": {
+    "dns": {
+      "nameservers": [],
+      "query_timeout_ms": 5000,
+      "rebind_protection": true
+    },
     "enabled": true,
+    "http": {
+      "deny_response": false
+    },
     "interface": {},
-    "ports": [],
+    "max_connections": null,
+    "nat64_prefixes": [
+      "64:ff9b::/96"
+    ],
     "policy": {
       "default_egress": "deny",
       "default_ingress": "deny",
       "rules": [
         {
-          "direction": "egress",
+          "action": "deny",
           "destination": {
             "group": "private"
           },
-          "protocols": [],
+          "direction": "egress",
           "ports": [],
-          "action": "deny"
+          "protocols": []
         },
         {
-          "direction": "egress",
+          "action": "deny",
           "destination": {
             "group": "loopback"
           },
-          "protocols": [],
+          "direction": "egress",
           "ports": [],
-          "action": "deny"
+          "protocols": []
         },
         {
-          "direction": "egress",
+          "action": "deny",
           "destination": {
             "group": "link_local"
           },
-          "protocols": [],
+          "direction": "egress",
           "ports": [],
-          "action": "deny"
+          "protocols": []
         },
         {
-          "direction": "egress",
+          "action": "deny",
           "destination": {
             "group": "metadata"
           },
-          "protocols": [],
+          "direction": "egress",
           "ports": [],
-          "action": "deny"
+          "protocols": []
         },
         {
-          "direction": "egress",
+          "action": "deny",
           "destination": {
             "group": "multicast"
           },
-          "protocols": [],
+          "direction": "egress",
           "ports": [],
-          "action": "deny"
+          "protocols": []
         },
         {
-          "direction": "egress",
+          "action": "allow",
           "destination": {
             "domain": "api.anthropic.com"
           },
-          "protocols": [
-            "tcp"
-          ],
+          "direction": "egress",
           "ports": [
             {
-              "start": 443,
-              "end": 443
+              "end": 443,
+              "start": 443
             }
           ],
-          "action": "allow"
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "claude.ai"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "platform.claude.com"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "code.claude.com"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "github.com"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "api.github.com"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "codeload.github.com"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "objects.githubusercontent.com"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "results-receiver.actions.githubusercontent.com"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "registry.npmjs.org"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "pypi.org"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
+        },
+        {
+          "action": "allow",
+          "destination": {
+            "domain": "files.pythonhosted.org"
+          },
+          "direction": "egress",
+          "ports": [
+            {
+              "end": 443,
+              "start": 443
+            }
+          ],
+          "protocols": [
+            "tcp"
+          ]
         }
       ]
     },
-    "dns": {
-      "rebind_protection": true,
-      "nameservers": [],
-      "query_timeout_ms": 5000
-    },
-    "tls": {
-      "enabled": true,
-      "intercepted_ports": [
-        443
-      ],
-      "bypass": [],
-      "verify_upstream": true,
-      "block_quic_on_intercept": true,
-      "upstream_ca_cert": [],
-      "scoped_upstream_ca_cert": [],
-      "scoped_verify_upstream": [],
-      "intercept_ca": {
-        "cert_path": null,
-        "key_path": null
-      },
-      "cache": {
-        "capacity": 1000,
-        "validity_hours": 24
-      }
-    },
-    "strict": true,
+    "ports": [],
     "secrets": {
       "secrets": [
         {
-          "env_var": "TEST_SBX_SECRET",
-          "value": "DUMMY-SECRET-123",
-          "placeholder": "TESTSBXPLACEHOLDER",
           "allowed_hosts": [
             {
-              "exact": "httpbin.org"
+              "exact": "github.com"
+            },
+            {
+              "exact": "api.github.com"
             }
           ],
+          "env_var": "GITHUB_PAT",
+          "passthrough_hosts": [],
+          "placeholder": "SBX-GITHUB-PAT-PLACEHOLDER",
+          "require_tls_identity": true,
           "substitution": {
-            "headers": true,
+            "body": false,
             "header_fields": [
               "authorization"
             ],
-            "query": false,
-            "body": false
+            "headers": true,
+            "query": false
           },
-          "passthrough_hosts": [],
-          "violation_action": "block-and-log",
-          "require_tls_identity": true
+          "value": "DUMMY-SECRET-123",
+          "violation_action": "block-and-log"
         }
       ],
       "violation_action": "block-and-log"
     },
-    "max_connections": null,
-    "nat64_prefixes": [
-      "64:ff9b::/96"
-    ],
-    "trust_host_cas": false,
-    "http": {
-      "deny_response": false
-    }
+    "strict": true,
+    "tls": {
+      "block_quic_on_intercept": true,
+      "bypass": [],
+      "cache": {
+        "capacity": 1000,
+        "validity_hours": 24
+      },
+      "enabled": true,
+      "intercept_ca": {
+        "cert_path": null,
+        "key_path": null
+      },
+      "intercepted_ports": [
+        443
+      ],
+      "scoped_upstream_ca_cert": [],
+      "scoped_verify_upstream": [],
+      "upstream_ca_cert": [],
+      "verify_upstream": true
+    },
+    "trust_host_cas": false
   },
-  "init": null,
+  "patches": [],
   "pull_policy": "Never",
-  "security_profile": "restricted",
-  "deployment_profile": "single_tenant",
-  "lifecycle": {
-    "ephemeral": false,
-    "max_duration_secs": null,
-    "idle_timeout_secs": null
+  "resources": {
+    "cpus": 6,
+    "max_cpus": 6,
+    "max_memory_mib": 12288,
+    "memory_mib": 12288
   },
-  "manifest_digest": "sha256:0151778c41861a32af874a8cb094c077cc820c816de38eac3397347590dbabe9",
-  "external_mount_policy": "strict"
+  "rlimits": [],
+  "runtime": {
+    "cmd": [
+      "bash"
+    ],
+    "disable_metrics_sample": false,
+    "entrypoint": [
+      "docker-entrypoint.sh"
+    ],
+    "hostname": null,
+    "log_level": null,
+    "metrics_sample_interval_ms": 1000,
+    "scripts": {},
+    "shell": "/bin/bash",
+    "user": "node",
+    "workdir": "/workspace"
+  },
+  "security_profile": "restricted"
 }

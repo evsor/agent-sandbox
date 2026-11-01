@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -21,6 +22,13 @@ import (
 )
 
 var errVerify = errors.New("verify failed")
+
+const (
+	// allowedHost is an allowlisted host that needs no credential.
+	allowedHost = "registry.npmjs.org"
+	// githubSecret is the secret whose placeholder GH_TOKEN holds.
+	githubSecret = "GITHUB_PAT"
+)
 
 // check is one row of the table: run returns nil for PASS, or why it failed. A FAIL in a boundary check stops the sandbox.
 type check struct {
@@ -84,6 +92,20 @@ func (a *app) checks(ctx context.Context, sb *msb.Sandbox, h *msb.SandboxHandle)
 		return func(out string) error { return validate(out, live.Mounts) }
 	}
 
+	// blocked runs a curl that the network must refuse. curl exits non-zero then, so its exit status is part of the check.
+	blocked := func(url string, extra ...string) func() error {
+		return func() error {
+			out, err := guest(ctx, sb, policy.NodeUser, "curl", policy.ProbeArgs(url, extra...)...)
+			if err != nil {
+				return err
+			}
+
+			return policy.CheckBlocked(out.ExitCode(), out.Stdout())
+		}
+	}
+
+	allowedURL := "https://" + allowedHost + "/"
+
 	return []check{
 		{"guest: uid 1000, NoNewPrivs 1", true, checkOutput(policy.CheckProcStatus, "cat", "/proc/self/status")},
 		// This also lists what node can't read: a forced login in node's own settings would hide that from the next check.
@@ -100,6 +122,27 @@ func (a *app) checks(ctx context.Context, sb *msb.Sandbox, h *msb.SandboxHandle)
 			}
 
 			return policy.Check(live)
+		}},
+		{"network: " + allowedHost + " answers over 443", false, checkOutput(policy.CheckAnswered, "curl", policy.ProbeArgs(allowedURL)...)},
+		{"network: other host blocked", false, blocked("https://example.com/")},
+		{"network: raw IP blocked", false, blocked("https://1.1.1.1/")},
+		{"network: port 80 to an allowed host blocked", false, blocked("http://" + allowedHost + "/")},
+		{"network: private address blocked", false, blocked("https://10.0.0.1/")},
+		{"network: metadata address blocked", false, blocked("http://169.254.169.254/")},
+		{"network: the host machine blocked", false, blocked("http://host.microsandbox.internal/")},
+		{"network: domain fronting blocked", false, blocked(allowedURL, "-H", "Host: example.com")},
+		{"network: unknown name does not resolve", false, func() error { return checkUnresolved(ctx, sb) }},
+		{"auth: any login is the subscription", false, func() error { return checkLogin(ctx, sb) }},
+		{"auth: GH_TOKEN is the " + githubSecret + " placeholder", false, checkOutput(func(out string) error {
+			return policy.CheckIsPlaceholder(out, live.Secrets, githubSecret)
+		}, "printenv", "GH_TOKEN")},
+		{"auth: placeholder blocked on a host it isn't bound to", false, func() error {
+			placeholder, err := policy.Placeholder(live.Secrets, githubSecret)
+			if err != nil {
+				return err
+			}
+
+			return blocked(allowedURL, "-H", "Authorization: token "+placeholder)()
 		}},
 		{"host: sandbox directory 0700", false, a.checkSandboxDir},
 		{"host: volume disk.raw 0600", false, func() error { return checkDiskModes(ctx, live.Mounts) }},
@@ -136,6 +179,26 @@ func checkManagedLoad(ctx context.Context, sb *msb.Sandbox) error {
 	}
 
 	return claude.CheckManagedLoad(out.StdoutBytes(), out.StderrBytes())
+}
+
+// checkLogin checks the output whatever the exit status: `claude auth status` exits 1 when not logged in.
+func checkLogin(ctx context.Context, sb *msb.Sandbox) error {
+	out, err := guest(ctx, sb, policy.NodeUser, agent.Command, agent.AuthStatusArgs...)
+	if err != nil {
+		return err
+	}
+
+	return claude.CheckLogin(out.StdoutBytes())
+}
+
+// checkUnresolved looks up a name nobody allowed, new on every run so no cache can answer. An allowlist resolves only its own names.
+func checkUnresolved(ctx context.Context, sb *msb.Sandbox) error {
+	out, err := guest(ctx, sb, policy.NodeUser, "getent", "hosts", "sbx-"+strings.ToLower(rand.Text())+".example.com")
+	if err != nil {
+		return err
+	}
+
+	return policy.CheckUnresolved(out.ExitCode(), out.Stdout())
 }
 
 // writableArgs are the arguments of a find that lists the mounts node can write.

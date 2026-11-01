@@ -201,7 +201,7 @@ func (a *app) createSandbox(ctx context.Context, s *spec, image string, secrets 
 		network.TLS = &msb.TLSConfig{}
 	}
 
-	for _, r := range cfg.Network.Rules {
+	for _, r := range cfg.Network.Rules() {
 		network.Rules = append(network.Rules, msb.PolicyRule{
 			Action: msb.PolicyAction(r.Action), Direction: msb.PolicyDirection(r.Direction),
 			Destination: r.Destination, Protocol: msb.PolicyProtocol(r.Protocol), Port: r.Port,

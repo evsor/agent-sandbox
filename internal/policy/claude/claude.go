@@ -30,6 +30,9 @@ const (
 // loginMethod is the only login allowed: the subscription.
 const loginMethod = "claudeai"
 
+// subscriptionAuth is the auth method `claude auth status` reports for a subscription login.
+const subscriptionAuth = "claude.ai"
+
 var managedOnly = []string{"allowManagedPermissionRulesOnly", "allowManagedHooksOnly", "allowManagedMcpServersOnly"}
 
 // loadFailures are what Claude Code prints when a whole managed source isn't in effect. Invalid entries leave the rest enforced and aren't checked.
@@ -217,6 +220,20 @@ func CheckModes(fsys fs.FS) error {
 func CheckManagedListing(listing string) error {
 	if entries := strings.TrimSpace(listing); entries != "" {
 		return fmt.Errorf("root must own these, and node must be able to read but not write them: %q", entries)
+	}
+
+	return nil
+}
+
+// CheckLogin checks the output of `claude auth status --json`: a login, if there is one yet, is the subscription.
+func CheckLogin(stdout []byte) error {
+	login, err := agent.ParseLogin(stdout)
+	if err != nil {
+		return err
+	}
+
+	if login.LoggedIn && login.Method != subscriptionAuth {
+		return fmt.Errorf("logged in with %q, want %s", login.Method, subscriptionAuth)
 	}
 
 	return nil

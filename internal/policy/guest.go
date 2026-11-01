@@ -17,6 +17,16 @@ const NodeUID = "1000"
 // rootDiskMiB is the root disk size verify requires, whatever the spec says, so a smaller spec fails.
 const rootDiskMiB = 16384
 
+// noAnswer is the status curl prints when no HTTP answer arrived.
+const noAnswer = "000"
+
+// getentNotFound is getent's exit status when the name doesn't resolve.
+const getentNotFound = 2
+
+// blockedExits are curl's exit statuses when the network refuses at once: no such name, connection refused, cut while receiving. A timeout
+// isn't among them: it could be an unblocked path where nothing answers.
+var blockedExits = []int{6, 7, 56}
+
 // CheckProcStatus checks /proc/self/status: the guest user is uid 1000 and can't gain privileges.
 func CheckProcStatus(status string) error {
 	fields := map[string]string{}
@@ -142,6 +152,66 @@ func CheckSecretsAbsent(environs []byte, secrets []Secret, value func(string) st
 	}
 
 	return errors.Join(errs...)
+}
+
+// ProbeArgs are the arguments of a curl that prints the HTTP status of url, 000 if nothing answered. extra goes before url.
+func ProbeArgs(url string, extra ...string) []string {
+	args := []string{"-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10"}
+
+	return append(append(args, extra...), url)
+}
+
+// CheckAnswered checks the output of a curl with ProbeArgs that exited 0: the host sent an HTTP status.
+func CheckAnswered(status string) error {
+	if status == "" || status == noAnswer {
+		return fmt.Errorf("no HTTP answer: %q", status)
+	}
+
+	return nil
+}
+
+// CheckBlocked checks a curl with ProbeArgs that should be denied: it exited with a network failure and no HTTP answer.
+// Any other failure, such as a missing curl or a bad certificate, doesn't prove the network refused it.
+func CheckBlocked(exit int, status string) error {
+	if !slices.Contains(blockedExits, exit) || status != noAnswer {
+		return fmt.Errorf("curl exited %d with status %q", exit, status)
+	}
+
+	return nil
+}
+
+// CheckUnresolved checks a getent hosts that should find nothing: exit 2 is getent's "not found".
+func CheckUnresolved(exit int, stdout string) error {
+	if exit != getentNotFound || stdout != "" {
+		return fmt.Errorf("getent exited %d and printed %q", exit, stdout)
+	}
+
+	return nil
+}
+
+// Placeholder returns the placeholder the guest sees for the secret called name.
+func Placeholder(secrets []Secret, name string) (string, error) {
+	i := slices.IndexFunc(secrets, func(s Secret) bool { return s.Name == name })
+	if i < 0 || secrets[i].Placeholder == "" {
+		return "", fmt.Errorf("the live config has no placeholder for %s", name)
+	}
+
+	return secrets[i].Placeholder, nil
+}
+
+// CheckIsPlaceholder checks a printed variable: it holds the placeholder of the secret called name. Its messages never quote the variable,
+// which would be a credential if the check fails.
+func CheckIsPlaceholder(printed string, secrets []Secret, name string) error {
+	placeholder, err := Placeholder(secrets, name)
+	if err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(printed) != placeholder {
+		return fmt.Errorf("the variable is not the placeholder of %s", name)
+	}
+
+	return nil
 }
 
 // EachMount runs fn on every mount. No mounts at all is a failure: nothing was checked.

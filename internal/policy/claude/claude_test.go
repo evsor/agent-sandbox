@@ -226,6 +226,37 @@ func TestCheckManagedListing(t *testing.T) {
 	}
 }
 
+func TestCheckLogin(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		stdout  string
+		wantErr string
+	}{
+		{name: "the subscription passes", stdout: `{"loggedIn": true, "authMethod": "claude.ai"}`},
+		{name: "not logged in yet passes", stdout: `{"loggedIn": false, "authMethod": "none"}`},
+		{name: "an API key", stdout: `{"loggedIn": true, "authMethod": "api_key"}`, wantErr: "api_key"},
+		{name: "an OAuth token from the environment", stdout: `{"loggedIn": true, "authMethod": "oauth_token"}`, wantErr: "oauth_token"},
+		{name: "unparsable output", stdout: "Not logged in", wantErr: "parsing claude auth status"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := CheckLogin([]byte(tt.stdout))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
 func TestCheckManagedLoad(t *testing.T) {
 	t.Parallel()
 

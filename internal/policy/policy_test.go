@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -35,7 +36,7 @@ func validSpec() Spec {
 			{Type: namedMount, Name: "ws", Target: "/workspace", Kind: diskKind, Nosuid: true, Nodev: true},
 			{Type: namedMount, Name: "st", Target: "/home/node/claude-state", Kind: diskKind, Nosuid: true, Nodev: true},
 		},
-		Secrets:  []Secret{{Name: "GITHUB_PAT", Hosts: []string{"github.com"}, HeaderFields: []string{authHeader}}},
+		Secrets:  []Secret{{Name: patSecret, Hosts: []string{patHost}, HeaderFields: []string{authHeader}}},
 		EnvNames: []string{"GH_TOKEN"},
 		Strings:  []string{"plain"},
 	}
@@ -53,6 +54,9 @@ func validSpec() Spec {
 
 // firstAllow is the index of validSpec's first allow rule, after its deny groups.
 var firstAllow = len(denyGroups)
+
+// notPublic is the check's message for an address allow it refuses.
+const notPublic = "want a public address"
 
 func allow(kind DestKind, dest string) Rule {
 	return Rule{Action: actionAllow, Direction: egress, DestKind: kind, Dest: dest, Protocols: []string{"tcp"}, Ports: []string{"443"}}
@@ -97,7 +101,37 @@ func TestCheck(t *testing.T) {
 		{name: "allow on any protocol", mutate: func(s *Spec) { s.Rules[firstAllow].Protocols = nil }, wantErr: "tcp:443 only"},
 		{name: "allow ingress", mutate: func(s *Spec) { s.Rules[firstAllow].Direction = "ingress" }, wantErr: "must be egress"},
 		{name: "allow a group", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindGroup, "public")) }, wantErr: "must name a host"},
-		{name: "allow an IP", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "1.1.1.1")) }, wantErr: "must name a host"},
+		{name: "allow a public IP", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "1.1.1.1")) }},
+		{name: "allow a public IPv6 address", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "2606:4700:4700::1111")) }},
+		{name: "allow a public range", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "140.82.112.0/20")) }},
+		{name: "allow the widest IPv4 range", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "140.82.0.0/16")) }},
+		{name: "allow the widest IPv6 range", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "2606:4700::/32")) }},
+		{name: "allow every address", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "0.0.0.0/0")) }, wantErr: notPublic},
+		{name: "allow too wide an IPv4 range", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "140.82.0.0/15")) }, wantErr: notPublic},
+		{name: "allow too wide an IPv6 range", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "2606::/16")) }, wantErr: notPublic},
+		{name: "allow a private IP", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "10.0.0.1")) }, wantErr: notPublic},
+		{name: "allow a private range", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "192.168.0.0/24")) }, wantErr: notPublic},
+		{name: "allow a private range by a host inside it", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "10.0.0.1/16")) }, wantErr: notPublic},
+		{name: "allow a loopback IP", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "127.0.0.1")) }, wantErr: notPublic},
+		{name: "allow the metadata IP", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "169.254.169.254")) }, wantErr: notPublic},
+		{name: "allow a multicast IP", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "224.0.0.1")) }, wantErr: notPublic},
+		{name: "allow a private IP mapped into IPv6", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "::ffff:10.0.0.1")) }, wantErr: notPublic},
+		{name: "allow a private IPv6 address", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "fd00::1")) }, wantErr: notPublic},
+		{name: "allow NAT64", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "64:ff9b::/96")) }, wantErr: notPublic},
+		{name: "allow the NAT64 block", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "64:ff9b::/32")) }, wantErr: notPublic},
+		{name: "allow shared address space", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "100.64.0.0/16")) }, wantErr: notPublic},
+		{name: "allow the benchmarking range", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "198.18.0.0/16")) }, wantErr: notPublic},
+		{name: "allow a range holding a reserved block", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "192.0.0.0/16")) }, wantErr: notPublic},
+		{name: "allow a reserved address", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "240.0.0.1")) }, wantErr: notPublic},
+		{name: "allow this network", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "0.1.0.0/16")) }, wantErr: notPublic},
+		{name: "allow documentation IPv6", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "2001:db8::1")) }, wantErr: notPublic},
+		{name: "allow 6to4", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "2002:a00:1::/48")) }, wantErr: notPublic},
+		{name: "allow an IPv4-compatible address", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "::a00:1")) }, wantErr: notPublic},
+		{name: "allow a zoned address", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindIP, "2606:4700::1%eth0")) }, wantErr: notPublic},
+		{name: "deny a domain", mutate: func(s *Spec) {
+			s.Rules = append([]Rule{{Action: actionDeny, Direction: egress, DestKind: kindDomain, Dest: "example.com"}}, s.Rules...)
+		}, wantErr: "deny must name a group"},
+		{name: "allow an unparsable range", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindCIDR, "not/a-range")) }, wantErr: notPublic},
 		{name: "allow a star domain", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindDomain, "*.example.com")) }, wantErr: "as a .suffix"},
 		{name: "one-label suffix", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindSuffix, ".com")) }, wantErr: "at least two labels"},
 		{name: "suffix with an empty first label", mutate: func(s *Spec) { s.Rules = append(s.Rules, allow(kindSuffix, "..com")) }, wantErr: "suffix ..com needs"},
@@ -185,7 +219,7 @@ func TestFromConfig(t *testing.T) {
 		t.Run("destination "+tt.dest, func(t *testing.T) {
 			t.Parallel()
 
-			cfg := &config.Config{Network: config.Network{Rules: []config.Rule{{Action: "deny", Destination: tt.dest}}}}
+			cfg := &config.Config{Network: config.Network{Deny: []string{tt.dest}}}
 			spec := FromConfig(cfg, nil)
 
 			assert.Equal(t, tt.wantKind, spec.Rules[0].DestKind)
@@ -199,7 +233,7 @@ func TestFromConfig(t *testing.T) {
 		cfg := &config.Config{
 			Volumes: []config.Volume{{Name: "ws", Target: "/workspace", Kind: diskKind, Nosuid: true, Nodev: true}},
 			Secrets: []config.Secret{{
-				Name: "GITHUB_PAT", Allow: []string{"github.com"}, HeaderFields: []string{authHeader}, Placeholder: "PAT",
+				Name: patSecret, Allow: []string{"github.com"}, HeaderFields: []string{authHeader}, Placeholder: "PAT",
 			}},
 			Env: []string{"ANTHROPIC_API_KEY=DUMMY-SECRET-123", "GH_TOKEN=", "NO_VALUE"},
 		}
@@ -207,7 +241,7 @@ func TestFromConfig(t *testing.T) {
 
 		assert.Equal(t, []Mount{{Type: namedMount, Name: "ws", Target: "/workspace", Kind: diskKind, Nosuid: true, Nodev: true}}, spec.Mounts)
 		assert.Equal(t, []Secret{{
-			Name: "GITHUB_PAT", Hosts: []string{"github.com"}, HeaderFields: []string{authHeader}, Placeholder: "PAT",
+			Name: patSecret, Hosts: []string{patHost}, HeaderFields: []string{authHeader}, Placeholder: "PAT",
 		}}, spec.Secrets)
 		assert.Equal(t, []string{"ANTHROPIC_API_KEY", "GH_TOKEN", "NO_VALUE"}, spec.EnvNames)
 		require.ErrorContains(t, Check(spec), "env ANTHROPIC_API_KEY")
@@ -270,6 +304,57 @@ func TestCheckImageEnv(t *testing.T) {
 			require.ErrorIs(t, err, ErrPolicy)
 			require.ErrorContains(t, err, tt.wantErr)
 			assert.NotContains(t, err.Error(), "DUMMY-SECRET-123")
+		})
+	}
+}
+
+// An allow_ips entry from the repo's own spec, through parsing and the check.
+func TestCheck_allowIPsEntry(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "config", "sandbox.toml"))
+	require.NoError(t, err)
+
+	tests := []struct {
+		name         string
+		entry        string
+		wantParseErr bool
+		wantErr      string
+	}{
+		{name: "a public address passes", entry: "8.8.8.8"},
+		{name: "a public range passes", entry: "140.82.112.0/20"},
+		{name: "a public IPv6 address passes", entry: "2606:4700:4700::1111"},
+		{name: "a private address fails", entry: "10.0.0.1", wantErr: notPublic},
+		{name: "every address fails", entry: "0.0.0.0/0", wantErr: notPublic},
+		{name: "NAT64 fails", entry: "64:ff9b::/96", wantErr: notPublic},
+		{name: "a zoned address fails to parse", entry: "fd00::1%x", wantParseErr: true},
+		{name: "a host fails to parse", entry: "example.com", wantParseErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := []byte(strings.Replace(string(raw), "allow_ips = []", `allow_ips = ["`+tt.entry+`"]`, 1))
+
+			cfg, err := config.Parse(body)
+			if tt.wantParseErr {
+				require.ErrorContains(t, err, "allow_ips")
+
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, []string{tt.entry}, cfg.Network.AllowIPs)
+
+			err = Check(FromConfig(cfg, body))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorContains(t, err, tt.wantErr)
 		})
 	}
 }

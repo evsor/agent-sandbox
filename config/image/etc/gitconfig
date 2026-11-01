@@ -7,3 +7,7 @@
 [user]
 	# Add your name and email
 	useConfigOnly = true
+[credential "https://github.com"]
+	username = x-access-token
+	# GH_TOKEN holds a placeholder: the network gateway swaps it for the real token
+	helper = "!f() { echo \"password=$GH_TOKEN\"; }; f"

@@ -19,6 +19,13 @@ import (
 	"github.com/evsor/agent-sandbox/internal/config"
 )
 
+// patSecret, patHost and livePlaceholder are the secret, a host it is bound to and its placeholder in testdata/live.json.
+const (
+	patSecret       = "GITHUB_PAT"
+	patHost         = "github.com"
+	livePlaceholder = "SBX-GITHUB-PAT-PLACEHOLDER"
+)
+
 func TestFromConfigJSON(t *testing.T) {
 	t.Parallel()
 
@@ -33,15 +40,15 @@ func TestFromConfigJSON(t *testing.T) {
 	t.Run("parses the stored config", func(t *testing.T) {
 		t.Parallel()
 
-		assert.Equal(t, "test-sbx-msb:4706ca6", spec.Image)
+		assert.Equal(t, "test-sbx-msb:8294c46", spec.Image)
 		assert.Equal(t, "node", spec.User)
 		assert.Equal(t, "restricted", spec.Security)
 		assert.Equal(t, Mount{Type: namedMount, Name: "test-sbx-state", Target: "/home/node/claude-state", Kind: diskKind, Nosuid: true, Nodev: true}, spec.Mounts[1])
 		assert.Equal(t, Rule{Action: actionDeny, Direction: egress, DestKind: kindGroup, Dest: "link-local"}, spec.Rules[2])
 		assert.Equal(t, allow(kindDomain, "api.anthropic.com"), spec.Rules[5])
 		assert.Equal(t, []Secret{{
-			Name: "TEST_SBX_SECRET", Hosts: []string{"httpbin.org"},
-			HeaderFields: []string{authHeader}, Placeholder: "TESTSBXPLACEHOLDER",
+			Name: patSecret, Hosts: []string{patHost, "api.github.com"},
+			HeaderFields: []string{authHeader}, Placeholder: livePlaceholder,
 		}}, spec.Secrets)
 	})
 
@@ -49,7 +56,7 @@ func TestFromConfigJSON(t *testing.T) {
 		t.Parallel()
 
 		assert.NotContains(t, spec.Strings, "DUMMY-SECRET-123")
-		assert.Contains(t, spec.Strings, "TESTSBXPLACEHOLDER")
+		assert.Contains(t, spec.Strings, livePlaceholder)
 	})
 
 	t.Run("passes the check", func(t *testing.T) {
@@ -139,6 +146,43 @@ func TestFromConfigJSON(t *testing.T) {
 
 		require.ErrorContains(t, Check(labeled), `"${"`)
 	})
+}
+
+// The form msb stores an address allow in reaches the check.
+func TestLiveRule_addressAllow(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		cidr    string
+		wantErr string
+	}{
+		{name: "a public address passes", cidr: "8.8.8.8/32"},
+		{name: "a private range fails", cidr: "10.0.0.0/24", wantErr: notPublic},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var r liveRule
+
+			require.NoError(t, json.Unmarshal([]byte(`{"action": "allow", "direction": "egress", "destination": {"cidr": "`+tt.cidr+`"},
+				"protocols": ["tcp"], "ports": [{"start": 443, "end": 443}]}`), &r))
+
+			spec := validSpec()
+			spec.Rules = append(spec.Rules, r.rule())
+
+			err := Check(spec)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
 }
 
 func TestLiveDestination(t *testing.T) {
