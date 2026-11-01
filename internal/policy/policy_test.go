@@ -35,7 +35,7 @@ func validSpec() Spec {
 			{Type: namedMount, Name: "ws", Target: "/workspace", Kind: diskKind, Nosuid: true, Nodev: true},
 			{Type: namedMount, Name: "st", Target: "/home/node/claude-state", Kind: diskKind, Nosuid: true, Nodev: true},
 		},
-		Secrets:  []Secret{{Name: "GITHUB_PAT", Hosts: []string{"github.com"}, HeaderFields: []string{authHeader}}},
+		Secrets:  []Secret{{Name: patSecret, Hosts: []string{patHost}, HeaderFields: []string{authHeader}}},
 		EnvNames: []string{"GH_TOKEN"},
 		Strings:  []string{"plain"},
 	}
@@ -199,7 +199,7 @@ func TestFromConfig(t *testing.T) {
 		cfg := &config.Config{
 			Volumes: []config.Volume{{Name: "ws", Target: "/workspace", Kind: diskKind, Nosuid: true, Nodev: true}},
 			Secrets: []config.Secret{{
-				Name: "GITHUB_PAT", Allow: []string{"github.com"}, HeaderFields: []string{authHeader}, Placeholder: "PAT",
+				Name: patSecret, Allow: []string{"github.com"}, HeaderFields: []string{authHeader}, Placeholder: "PAT",
 			}},
 			Env: []string{"ANTHROPIC_API_KEY=DUMMY-SECRET-123", "GH_TOKEN=", "NO_VALUE"},
 		}
@@ -207,7 +207,7 @@ func TestFromConfig(t *testing.T) {
 
 		assert.Equal(t, []Mount{{Type: namedMount, Name: "ws", Target: "/workspace", Kind: diskKind, Nosuid: true, Nodev: true}}, spec.Mounts)
 		assert.Equal(t, []Secret{{
-			Name: "GITHUB_PAT", Hosts: []string{"github.com"}, HeaderFields: []string{authHeader}, Placeholder: "PAT",
+			Name: patSecret, Hosts: []string{patHost}, HeaderFields: []string{authHeader}, Placeholder: "PAT",
 		}}, spec.Secrets)
 		assert.Equal(t, []string{"ANTHROPIC_API_KEY", "GH_TOKEN", "NO_VALUE"}, spec.EnvNames)
 		require.ErrorContains(t, Check(spec), "env ANTHROPIC_API_KEY")

@@ -19,6 +19,13 @@ import (
 	"github.com/evsor/agent-sandbox/internal/config"
 )
 
+// patSecret, patHost and livePlaceholder are the secret, a host it is bound to and its placeholder in testdata/live.json.
+const (
+	patSecret       = "GITHUB_PAT"
+	patHost         = "github.com"
+	livePlaceholder = "SBX-GITHUB-PAT-PLACEHOLDER"
+)
+
 func TestFromConfigJSON(t *testing.T) {
 	t.Parallel()
 
@@ -33,15 +40,15 @@ func TestFromConfigJSON(t *testing.T) {
 	t.Run("parses the stored config", func(t *testing.T) {
 		t.Parallel()
 
-		assert.Equal(t, "test-sbx-msb:4706ca6", spec.Image)
+		assert.Equal(t, "test-sbx-msb:8294c46", spec.Image)
 		assert.Equal(t, "node", spec.User)
 		assert.Equal(t, "restricted", spec.Security)
 		assert.Equal(t, Mount{Type: namedMount, Name: "test-sbx-state", Target: "/home/node/claude-state", Kind: diskKind, Nosuid: true, Nodev: true}, spec.Mounts[1])
 		assert.Equal(t, Rule{Action: actionDeny, Direction: egress, DestKind: kindGroup, Dest: "link-local"}, spec.Rules[2])
 		assert.Equal(t, allow(kindDomain, "api.anthropic.com"), spec.Rules[5])
 		assert.Equal(t, []Secret{{
-			Name: "TEST_SBX_SECRET", Hosts: []string{"httpbin.org"},
-			HeaderFields: []string{authHeader}, Placeholder: "TESTSBXPLACEHOLDER",
+			Name: patSecret, Hosts: []string{patHost, "api.github.com"},
+			HeaderFields: []string{authHeader}, Placeholder: livePlaceholder,
 		}}, spec.Secrets)
 	})
 
@@ -49,7 +56,7 @@ func TestFromConfigJSON(t *testing.T) {
 		t.Parallel()
 
 		assert.NotContains(t, spec.Strings, "DUMMY-SECRET-123")
-		assert.Contains(t, spec.Strings, "TESTSBXPLACEHOLDER")
+		assert.Contains(t, spec.Strings, livePlaceholder)
 	})
 
 	t.Run("passes the check", func(t *testing.T) {

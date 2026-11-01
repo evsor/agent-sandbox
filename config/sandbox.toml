@@ -9,6 +9,8 @@ user = "node"
 workdir = "/workspace"
 shell = "/bin/bash"
 security = "restricted"
+# A placeholder, not a credential: the network gateway swaps it for the real token in requests to GitHub
+env = ["GH_TOKEN=SBX-GITHUB-PAT-PLACEHOLDER"]
 
 [[volumes]]
 name = "claude-workspace"
@@ -59,10 +61,106 @@ action = "deny"
 direction = "egress"
 destination = "multicast"
 
-# Claude Code API
+# Claude API, also the WebFetch safety check (Claude Code network docs)
 [[network.rules]]
 action = "allow"
 direction = "egress"
 destination = "api.anthropic.com"
 protocol = "tcp"
 port = "443"
+
+# Subscription login (Claude Code network docs)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "claude.ai"
+protocol = "tcp"
+port = "443"
+
+# OAuth token exchange and refresh, and the API docs (Claude Code network docs)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "platform.claude.com"
+protocol = "tcp"
+port = "443"
+
+# Claude Code docs lookups (Claude Code network docs)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "code.claude.com"
+protocol = "tcp"
+port = "443"
+
+# Git over HTTPS, reached with the read-only token (GitHub docs)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "github.com"
+protocol = "tcp"
+port = "443"
+
+# gh and the REST API, reached with the read-only token (GitHub docs)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "api.github.com"
+protocol = "tcp"
+port = "443"
+
+# Archive downloads, where github.com redirects them (GitHub docs)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "codeload.github.com"
+protocol = "tcp"
+port = "443"
+
+# Downloads GitHub serves from another host (the domain list at api.github.com/meta)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "objects.githubusercontent.com"
+protocol = "tcp"
+port = "443"
+
+# Actions run logs for gh run view, where api.github.com redirects them (seen by following the redirect)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "results-receiver.actions.githubusercontent.com"
+protocol = "tcp"
+port = "443"
+
+# npm packages (npm docs)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "registry.npmjs.org"
+protocol = "tcp"
+port = "443"
+
+# Python package index (PyPI docs)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "pypi.org"
+protocol = "tcp"
+port = "443"
+
+# Python package downloads (PyPI docs)
+[[network.rules]]
+action = "allow"
+direction = "egress"
+destination = "files.pythonhosted.org"
+protocol = "tcp"
+port = "443"
+
+# The read-only GitHub token. Its value comes from this variable in sbx's environment and never enters the guest.
+[[secrets]]
+name = "GITHUB_PAT"
+allow = ["github.com", "api.github.com"]
+placeholder = "SBX-GITHUB-PAT-PLACEHOLDER"
+header_fields = ["authorization"]
+violation_action = "block-and-log"

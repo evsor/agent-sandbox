@@ -114,7 +114,9 @@ func TestLoad_repoFile(t *testing.T) {
 	assert.Equal(t, "claude-sandbox", cfg.Name)
 	assert.Equal(t, uint32(16384), cfg.RootDiskMiB)
 	assert.Len(t, cfg.Volumes, 2)
-	assert.Empty(t, cfg.Secrets)
+	require.Len(t, cfg.Secrets, 1)
+	assert.Equal(t, "GITHUB_PAT", cfg.Secrets[0].Name)
+	assert.Equal(t, []string{"GH_TOKEN=" + cfg.Secrets[0].Placeholder}, cfg.Env)
 }
 
 func TestConfig_EnvMap(t *testing.T) {
