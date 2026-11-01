@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	msb "github.com/superradcompany/microsandbox/sdk/go"
@@ -19,6 +18,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/evsor/agent-sandbox/internal/config"
+	"github.com/evsor/agent-sandbox/internal/hostfs"
 )
 
 // version is set at build time: -ldflags "-X main.version=dev-<short sha>" locally, X.Y.Z for releases.
@@ -77,6 +77,19 @@ func rootCmd() *cobra.Command {
 	return root
 }
 
+// newCmd builds a subcommand that takes no arguments.
+func newCmd(use, short string, run func(context.Context) error) *cobra.Command {
+	return &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return run(cmd.Context())
+		},
+	}
+}
+
+// noArgs rejects arguments as a usage error, so sbx exits 2.
 func noArgs(cmd *cobra.Command, args []string) error {
 	if err := cobra.NoArgs(cmd, args); err != nil {
 		return fmt.Errorf("%w: %w", errUsage, err)
@@ -85,6 +98,7 @@ func noArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// setup runs before every command: it sets the logger and the state directory, checks the msb runtime and settles the sandbox name.
 func (a *app) setup(cmd *cobra.Command) error {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(a.v.GetString("log-level"))); err != nil {
@@ -97,16 +111,16 @@ func (a *app) setup(cmd *cobra.Command) error {
 
 	a.stateDir = a.v.GetString("state-dir")
 	if a.stateDir == "" {
-		home, err := os.UserHomeDir()
+		dir, err := hostfs.HomePath(".local", "state", "agent-sandbox")
 		if err != nil {
-			return fmt.Errorf("finding the home directory: %w", err)
+			return err
 		}
 
-		a.stateDir = filepath.Join(home, ".local", "state", "agent-sandbox")
+		a.stateDir = dir
 	}
 
-	if err := os.MkdirAll(a.stateDir, 0o700); err != nil {
-		return fmt.Errorf("creating the state directory: %w", err)
+	if err := hostfs.EnsureDir(a.stateDir); err != nil {
+		return err
 	}
 
 	if err := checkRuntime(cmd.Context()); err != nil {

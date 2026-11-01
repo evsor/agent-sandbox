@@ -20,9 +20,19 @@ import (
 	"github.com/evsor/agent-sandbox/internal/policy/claude"
 )
 
-const nodeHome = "/home/node"
+const (
+	nodeHome  = "/home/node"
+	nodeOwner = policy.NodeUID + ":" + policy.NodeUID
+	rootUser  = "root"
+)
 
-var errNotRunning = errors.New("sandbox is not running")
+// specPath is the sandbox spec, relative to the checkout.
+const specPath = "config/sandbox.toml"
+
+var (
+	errNotRunning = errors.New("sandbox is not running")
+	errNoSandbox  = errors.New("no sandbox recorded: run sbx init")
+)
 
 // spec is the sandbox spec from config/sandbox.toml.
 type spec struct {
@@ -32,16 +42,9 @@ type spec struct {
 }
 
 func loadSpec(repo string) (*spec, error) {
-	path := filepath.Join(repo, "config", "sandbox.toml")
-
-	raw, err := os.ReadFile(path) //nolint:gosec // the spec of the checkout sbx runs from
+	cfg, raw, err := config.Load(filepath.Join(repo, specPath))
 	if err != nil {
-		return nil, fmt.Errorf("reading the spec: %w", err)
-	}
-
-	cfg, err := config.Parse(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, err
 	}
 
 	return &spec{repo: repo, cfg: cfg, raw: raw}, nil
@@ -235,6 +238,20 @@ func (a *app) createSandbox(ctx context.Context, s *spec, image string) error {
 	return nil
 }
 
+// handle finds the sandbox. msb.IsKind still recognizes the error it returns.
+func (a *app) handle(ctx context.Context) (*msb.SandboxHandle, error) {
+	if a.name == "" {
+		return nil, errNoSandbox
+	}
+
+	h, err := msb.GetSandbox(ctx, a.name)
+	if err != nil {
+		return nil, fmt.Errorf("finding sandbox %s: %w", a.name, err)
+	}
+
+	return h, nil
+}
+
 // startSandbox connects to the sandbox, starting it if needed.
 func (a *app) startSandbox(ctx context.Context) (*msb.Sandbox, error) {
 	unlock, err := a.lock()
@@ -243,9 +260,9 @@ func (a *app) startSandbox(ctx context.Context) (*msb.Sandbox, error) {
 	}
 	defer unlock()
 
-	h, err := msb.GetSandbox(ctx, a.name)
+	h, err := a.handle(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("finding sandbox %s: %w", a.name, err)
+		return nil, err
 	}
 
 	sb, err := h.ConnectOrStart(ctx, msb.WithConnectOrStartDetached())
@@ -258,9 +275,9 @@ func (a *app) startSandbox(ctx context.Context) (*msb.Sandbox, error) {
 
 // runningSandbox connects to the sandbox only if it is running: an exec into a stopped one would start it, then stop it again on exit.
 func (a *app) runningSandbox(ctx context.Context) (*msb.Sandbox, *msb.SandboxHandle, error) {
-	h, err := msb.GetSandbox(ctx, a.name)
+	h, err := a.handle(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("finding sandbox %s: %w", a.name, err)
+		return nil, nil, err
 	}
 
 	if h.Status() != msb.SandboxStatusRunning {
@@ -285,7 +302,7 @@ func release(ctx context.Context, sb *msb.Sandbox) {
 // guest runs one argv command in the sandbox, as node in its home or as root in /.
 func guest(ctx context.Context, sb *msb.Sandbox, user, cmd string, args ...string) (*msb.ExecOutput, error) {
 	cwd := nodeHome
-	if user == "root" {
+	if user == rootUser {
 		cwd = "/"
 	}
 
@@ -295,6 +312,20 @@ func guest(ctx context.Context, sb *msb.Sandbox, user, cmd string, args ...strin
 	}
 
 	return out, nil
+}
+
+// guestStdout runs one argv command in the sandbox and returns its output. The command must exit 0.
+func guestStdout(ctx context.Context, sb *msb.Sandbox, user, cmd string, args ...string) (string, error) {
+	out, err := guest(ctx, sb, user, cmd, args...)
+	if err != nil {
+		return "", err
+	}
+
+	if !out.Success() {
+		return "", fmt.Errorf("%s exited %d: %q", cmd, out.ExitCode(), strings.TrimSpace(out.Stderr()))
+	}
+
+	return out.Stdout(), nil
 }
 
 // ownMounts starts the sandbox if needed and gives node the spec's mount roots.
@@ -319,26 +350,17 @@ func chownMounts(ctx context.Context, sb *msb.Sandbox, targets []string) ([]stri
 	var changed []string
 
 	for _, target := range targets {
-		out, err := guest(ctx, sb, "root", "stat", "-c", "%u:%g", target)
+		owner, err := guestStdout(ctx, sb, rootUser, "stat", "-c", "%u:%g", target)
 		if err != nil {
 			return changed, err
 		}
 
-		if !out.Success() {
-			return changed, fmt.Errorf("stat %s: %s", target, strings.TrimSpace(out.Stderr()))
-		}
-
-		if strings.TrimSpace(out.Stdout()) == "1000:1000" {
+		if strings.TrimSpace(owner) == nodeOwner {
 			continue
 		}
 
-		out, err = guest(ctx, sb, "root", "chown", "1000:1000", target)
-		if err != nil {
+		if _, err := guestStdout(ctx, sb, rootUser, "chown", nodeOwner, target); err != nil {
 			return changed, err
-		}
-
-		if !out.Success() {
-			return changed, fmt.Errorf("chown %s: %s", target, strings.TrimSpace(out.Stderr()))
 		}
 
 		changed = append(changed, target)
@@ -361,14 +383,10 @@ func liveSpec(ctx context.Context, h *msb.SandboxHandle) (policy.Spec, error) {
 
 // backgroundSessions lists the background sessions, running claude as node in its home.
 func backgroundSessions(ctx context.Context, sb *msb.Sandbox) ([]agent.Session, error) {
-	out, err := guest(ctx, sb, "node", "claude", "agents", "--json")
+	out, err := guestStdout(ctx, sb, policy.NodeUser, agent.Command, agent.SessionsArgs...)
 	if err != nil {
 		return nil, err
 	}
 
-	if !out.Success() {
-		return nil, fmt.Errorf("claude agents: %q", strings.TrimSpace(out.Stderr()))
-	}
-
-	return agent.ParseSessions(out.StdoutBytes())
+	return agent.ParseSessions([]byte(out))
 }

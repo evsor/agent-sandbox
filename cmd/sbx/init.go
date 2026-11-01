@@ -14,18 +14,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/evsor/agent-sandbox/internal/hostfs"
 	"github.com/evsor/agent-sandbox/internal/ssh"
 )
 
 func newInitCmd(a *app) *cobra.Command {
-	return &cobra.Command{
-		Use:   "init",
-		Short: "Check the host, build the image from config/, create and start the sandbox, and verify it (re-runnable)",
-		Args:  noArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return a.init(cmd.Context())
-		},
-	}
+	return newCmd("init", "Check the host, build the image from config/, create and start the sandbox, and verify it (re-runnable)", a.init)
 }
 
 func (a *app) init(ctx context.Context) error {
@@ -49,7 +43,7 @@ func (a *app) init(ctx context.Context) error {
 		return err
 	}
 
-	a.report("ok", "policy check: config/sandbox.toml")
+	a.report("ok", "policy check: "+specPath)
 
 	if err := a.setupSSH(ctx); err != nil {
 		return err
@@ -81,7 +75,7 @@ func (a *app) init(ctx context.Context) error {
 		status = "made"
 	}
 
-	a.report(status, filepath.Join(a.stateDir, "state.json"))
+	a.report(status, a.statePath())
 
 	return a.verify(ctx)
 }
@@ -117,7 +111,8 @@ func (a *app) setupSSH(ctx context.Context) error {
 		return fmt.Errorf("finding the state directory: %w", err)
 	}
 
-	sbx, err := sbxPath()
+	// sbx is installed here: the ssh config runs it from there.
+	sbx, err := hostfs.HomePath(".local", "bin", "sbx")
 	if err != nil {
 		return err
 	}
@@ -149,19 +144,9 @@ func (a *app) setupSSH(ctx context.Context) error {
 	return nil
 }
 
-// sbxPath is where sbx is installed: the ssh config runs it from there.
-func sbxPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("finding the home directory: %w", err)
-	}
-
-	return filepath.Join(home, ".local", "bin", "sbx"), nil
-}
-
 // ensureSandbox creates the sandbox if it doesn't exist, or starts it if it's stopped, then gives node the mount roots.
 func (a *app) ensureSandbox(ctx context.Context, s *spec, tag string) error {
-	h, err := msb.GetSandbox(ctx, a.name)
+	h, err := a.handle(ctx)
 	started := false
 
 	switch {
@@ -176,7 +161,7 @@ func (a *app) ensureSandbox(ctx context.Context, s *spec, tag string) error {
 
 		a.report("made", "sandbox "+a.name)
 	case err != nil:
-		return fmt.Errorf("finding sandbox %s: %w", a.name, err)
+		return err
 	case h.Status() == msb.SandboxStatusRunning:
 		a.report("ok", "sandbox "+a.name+" is running")
 	default:

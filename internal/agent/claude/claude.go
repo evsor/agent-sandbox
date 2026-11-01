@@ -1,4 +1,4 @@
-// Package claude reads the output of Claude Code's commands and returns structured data.
+// Package claude names Claude Code's commands whose output sbx reads, and reads that output into structured data.
 package claude
 
 import (
@@ -9,6 +9,15 @@ import (
 )
 
 const backgroundKind = "background"
+
+// Command is the program this package reads the output of.
+const Command = "claude"
+
+// The arguments of the commands whose output ParseLogin and ParseSessions read.
+var (
+	AuthStatusArgs = []string{"auth", "status", "--json"}
+	SessionsArgs   = []string{"agents", "--json"}
+)
 
 // Login is the login state from `claude auth status --json`.
 type Login struct {

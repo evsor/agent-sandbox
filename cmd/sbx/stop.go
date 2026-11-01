@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	msb "github.com/superradcompany/microsandbox/sdk/go"
@@ -13,24 +12,13 @@ import (
 )
 
 func newStopCmd(a *app) *cobra.Command {
-	return &cobra.Command{
-		Use:   "stop",
-		Short: "Stops the sandbox",
-		Args:  noArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return a.stop(cmd.Context())
-		},
-	}
+	return newCmd("stop", "Stops the sandbox", a.stop)
 }
 
 func (a *app) stop(ctx context.Context) error {
-	if a.name == "" {
-		return errors.New("no sandbox recorded: run sbx init")
-	}
-
-	h, err := msb.GetSandbox(ctx, a.name)
+	h, err := a.handle(ctx)
 	if err != nil {
-		return fmt.Errorf("finding sandbox %s: %w", a.name, err)
+		return err
 	}
 
 	if h.Status() == msb.SandboxStatusStopped {

@@ -6,8 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 
@@ -18,14 +16,7 @@ import (
 )
 
 func newStatusCmd(a *app) *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Show the sandbox's state, image, pending rebuild, volume usage, login and background sessions",
-		Args:  noArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return a.status(cmd.Context())
-		},
-	}
+	return newCmd("status", "Show the sandbox's state, image, pending rebuild, volume usage, login and background sessions", a.status)
 }
 
 func (a *app) status(ctx context.Context) error {
@@ -35,7 +26,7 @@ func (a *app) status(ctx context.Context) error {
 		return nil
 	}
 
-	h, err := msb.GetSandbox(ctx, a.name)
+	h, err := a.handle(ctx)
 	if msb.IsKind(err, msb.ErrSandboxNotFound) {
 		fmt.Fprintf(a.out, "sandbox  %s: not created (run sbx init)\n", a.name)
 
@@ -43,7 +34,7 @@ func (a *app) status(ctx context.Context) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("finding sandbox %s: %w", a.name, err)
+		return err
 	}
 
 	live, err := liveSpec(ctx, h)
@@ -124,21 +115,14 @@ func (a *app) pendingRebuild(ctx context.Context) error {
 
 // volumeUsage reads usage with df in the guest: the SDK reports 0 for disk volumes.
 func (a *app) volumeUsage(ctx context.Context, sb *msb.Sandbox, mount policy.Mount) error {
-	out, err := guest(ctx, sb, "node", "df", "--block-size=1", "--output=used,size", mount.Target)
+	out, err := guestStdout(ctx, sb, policy.NodeUser, "df", policy.DFArgs(mount.Target)...)
 	if err != nil {
-		return err
+		return fmt.Errorf("volume %s: %w", mount.Name, err)
 	}
 
-	f := strings.Fields(out.Stdout())
-	if len(f) != 4 {
-		return fmt.Errorf("df %s: %q", mount.Target, out.Stdout())
-	}
-
-	used, err1 := strconv.ParseUint(f[2], 10, 64)
-	size, err2 := strconv.ParseUint(f[3], 10, 64)
-
-	if err := errors.Join(err1, err2); err != nil || size == 0 {
-		return fmt.Errorf("df %s: %q", mount.Target, out.Stdout())
+	used, size, err := policy.ParseDF(out)
+	if err != nil {
+		return fmt.Errorf("volume %s: %w", mount.Name, err)
 	}
 
 	pct := used * 100 / size
@@ -155,7 +139,7 @@ func (a *app) volumeUsage(ctx context.Context, sb *msb.Sandbox, mount policy.Mou
 
 // loginStatus reads the login from stdout whatever the exit status: `claude auth status` exits 1 when not logged in.
 func (a *app) loginStatus(ctx context.Context, sb *msb.Sandbox) error {
-	out, err := guest(ctx, sb, "node", "claude", "auth", "status", "--json")
+	out, err := guest(ctx, sb, policy.NodeUser, agent.Command, agent.AuthStatusArgs...)
 	if err != nil {
 		return err
 	}

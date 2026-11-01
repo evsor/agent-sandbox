@@ -1,5 +1,6 @@
 // Package policy provides functions to enforce the baseline security and configuration policy for sandboxes.
-// It checks for any changes that could reach or leak from the host during init or rebuild phases.
+// It checks for any changes that could reach or leak from the host during init or rebuild phases, and checks what commands print in the
+// running sandbox.
 package policy
 
 import (
@@ -38,10 +39,10 @@ const (
 	diskKind   = "disk"
 )
 
-const (
-	wantSecurity = "restricted"
-	wantUser     = "node"
-)
+const wantSecurity = "restricted"
+
+// NodeUser is the user everything runs as in the sandbox.
+const NodeUser = "node"
 
 // DestKind represents the kind of network destination.
 type DestKind string
@@ -74,7 +75,7 @@ type Spec struct {
 	Secrets        []Secret
 	EnvNames       []string
 	Strings        []string // every config string except secret values, scanned for "${"
-	Image          string   // informational: the check doesn't judge it
+	Image          string   // informational: the check ignores it
 }
 
 // Mount is a guest mount. Type is "named" for named volumes and Kind their volume kind ("disk", "dir").
@@ -145,12 +146,21 @@ func FromConfig(cfg *config.Config, raw []byte) Spec {
 		})
 	}
 
-	for _, entry := range cfg.Env {
-		name, _, _ := strings.Cut(entry, "=")
-		spec.EnvNames = append(spec.EnvNames, name)
-	}
+	spec.EnvNames = envNames(cfg.Env)
 
 	return spec
+}
+
+// envNames returns the names of "NAME=value" entries.
+func envNames(entries []string) []string {
+	var names []string
+
+	for _, entry := range entries {
+		name, _, _ := strings.Cut(entry, "=")
+		names = append(names, name)
+	}
+
+	return names
 }
 
 // classify sorts a sandbox.toml destination the way the SDK does.
@@ -180,13 +190,18 @@ func knownGroup(name string) (string, bool) {
 	return name, slices.Contains(groups, name)
 }
 
+// violations collects what a check finds, each wrapping ErrPolicy.
+type violations []error
+
+func (v *violations) fail(format string, args ...any) {
+	*v = append(*v, fmt.Errorf("%w: "+format, append([]any{ErrPolicy}, args...)...))
+}
+
 // Check returns every violation in spec, joined, or nil.
 func Check(spec Spec) error {
-	var errs []error
+	var found violations
 
-	fail := func(format string, args ...any) {
-		errs = append(errs, fmt.Errorf("%w: "+format, append([]any{ErrPolicy}, args...)...))
-	}
+	fail := found.fail
 
 	for _, s := range spec.Strings {
 		if strings.Contains(s, "${") {
@@ -204,11 +219,11 @@ func Check(spec Spec) error {
 		fail("security is %q, want %s", spec.Security, wantSecurity)
 	}
 
-	if spec.User != wantUser {
-		fail("user is %q, want %s", spec.User, wantUser)
+	if spec.User != NodeUser {
+		fail("user is %q, want %s", spec.User, NodeUser)
 	}
 
-	return errors.Join(errs...)
+	return errors.Join(found...)
 }
 
 func checkMounts(mounts []Mount, fail func(string, ...any)) {
@@ -330,9 +345,14 @@ func checkSecrets(spec Spec, fail func(string, ...any)) {
 		}
 	}
 
-	for _, name := range spec.EnvNames {
+	checkEnvNames("env", spec.EnvNames, fail)
+}
+
+// checkEnvNames fails on agent credential and endpoint variables. Messages name the variable, never its value.
+func checkEnvNames(kind string, names []string, fail func(string, ...any)) {
+	for _, name := range names {
 		if claude.IsAgentAuthVar(name) {
-			fail("env %s: %s", name, authVarsNotAllowed)
+			fail("%s %s: %s", kind, name, authVarsNotAllowed)
 		}
 	}
 }
@@ -366,16 +386,11 @@ func CheckManaged(fsys fs.FS) error {
 }
 
 // CheckImageEnv checks the image's env, "NAME=value" entries as docker image inspect lists them, for agent credential and endpoint
-// variables. Messages name the variable, never its value.
+// variables.
 func CheckImageEnv(env []string) error {
-	var errs []error
+	var found violations
 
-	for _, entry := range env {
-		name, _, _ := strings.Cut(entry, "=")
-		if claude.IsAgentAuthVar(name) {
-			errs = append(errs, fmt.Errorf("%w: image env %s: %s", ErrPolicy, name, authVarsNotAllowed))
-		}
-	}
+	checkEnvNames("image env", envNames(env), found.fail)
 
-	return errors.Join(errs...)
+	return errors.Join(found...)
 }

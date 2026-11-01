@@ -3,15 +3,15 @@
 package ssh
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/evsor/agent-sandbox/internal/hostfs"
 )
 
 // The files in the SSH directory that sbx's commands use.
@@ -53,8 +53,8 @@ func Dir(stateDir string) string {
 
 // Setup creates what's missing and rewrites what changed. It returns the paths it created or changed, with the ssh config last.
 func Setup(ctx context.Context, o Options) ([]string, error) {
-	if err := os.MkdirAll(o.Dir, 0o700); err != nil {
-		return nil, fmt.Errorf("creating %s: %w", o.Dir, err)
+	if err := hostfs.EnsureDir(o.Dir); err != nil {
+		return nil, err
 	}
 
 	var made []string
@@ -80,7 +80,7 @@ func Setup(ctx context.Context, o Options) ([]string, error) {
 	for _, name := range []string{AuthorizedKeys, knownHosts, Config} {
 		path := filepath.Join(o.Dir, name)
 
-		changed, err := writeIfChanged(path, []byte(files[name]))
+		changed, err := hostfs.WriteIfChanged(path, []byte(files[name]))
 		if err != nil {
 			return nil, err
 		}
@@ -95,10 +95,9 @@ func Setup(ctx context.Context, o Options) ([]string, error) {
 
 // makeKey creates an ed25519 key unless it exists. No passphrase: whoever can read it can already run msb exec.
 func makeKey(ctx context.Context, path string) (bool, error) {
-	if _, err := os.Stat(path); err == nil {
-		return false, nil
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return false, fmt.Errorf("checking %s: %w", path, err)
+	exists, err := hostfs.Exists(path)
+	if err != nil || exists {
+		return false, err
 	}
 
 	cmd := exec.CommandContext(ctx, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "sbx-"+filepath.Base(path), "-f", path) //nolint:gosec // argv only, never a shell
@@ -135,18 +134,4 @@ func render(o Options) (map[string]string, error) {
 		knownHosts:     o.Name + " " + fields[0] + " " + fields[1] + "\n",
 		Config:         fmt.Sprintf(configTemplate, o.Name, o.ProxyCommand, o.Dir),
 	}, nil
-}
-
-// writeIfChanged writes data with mode 0600.
-func writeIfChanged(path string, data []byte) (bool, error) {
-	old, err := os.ReadFile(path) //nolint:gosec // a path sbx builds under its own state dir
-	if err == nil && bytes.Equal(old, data) {
-		return false, nil
-	}
-
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return false, fmt.Errorf("writing %s: %w", path, err)
-	}
-
-	return true, nil
 }

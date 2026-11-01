@@ -72,19 +72,19 @@ var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 // ValidName reports whether name can name the sandbox.
 func ValidName(name string) bool { return validName.MatchString(name) }
 
-// Load config from the TOML file at path; see Parse.
-func Load(path string) (*Config, error) {
+// Load reads the TOML file at path and returns its config and raw bytes, which the policy check scans; see Parse.
+func Load(path string) (*Config, []byte, error) {
 	raw, err := os.ReadFile(path) //nolint:gosec // the spec of the checkout sbx runs from
 	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", path, err)
+		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 
 	cfg, err := Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, nil, fmt.Errorf("%s: %w", path, err)
 	}
 
-	return cfg, nil
+	return cfg, raw, nil
 }
 
 // Parse the TOML spec.

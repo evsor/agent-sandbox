@@ -91,7 +91,7 @@ violation_action = "block-and-log"
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			cfg, err := Load(writeSpec(t, tt.body))
+			cfg, raw, err := Load(writeSpec(t, tt.body))
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 
@@ -99,6 +99,7 @@ violation_action = "block-and-log"
 			}
 
 			require.NoError(t, err)
+			assert.Equal(t, tt.body, string(raw))
 			tt.check(t, cfg)
 		})
 	}
@@ -107,7 +108,7 @@ violation_action = "block-and-log"
 func TestLoad_repoFile(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := Load(filepath.Join("..", "..", "config", "sandbox.toml"))
+	cfg, _, err := Load(filepath.Join("..", "..", "config", "sandbox.toml"))
 	require.NoError(t, err)
 
 	assert.Equal(t, "claude-sandbox", cfg.Name)
