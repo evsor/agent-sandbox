@@ -96,7 +96,7 @@ func (a *app) pendingRebuild(ctx context.Context) error {
 		return nil
 	}
 
-	head, err := gitOut(ctx, st.Clone, "rev-parse", "origin/main")
+	head, err := a.gitOut(ctx, st.Clone, "rev-parse", "origin/main")
 	if err != nil {
 		// A clone that moved shouldn't hide the rest of the report.
 		fmt.Fprintf(a.out, "rebuild  unknown: %v\n", err)

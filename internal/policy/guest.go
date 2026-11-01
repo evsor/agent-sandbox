@@ -3,6 +3,7 @@
 package policy
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"slices"
@@ -114,6 +115,33 @@ func CheckRootDisk(df string) error {
 	}
 
 	return nil
+}
+
+// CheckSecretsAbsent checks the guest's process environments for each secret's value, which value returns. Its messages name the
+// variable, never the value.
+func CheckSecretsAbsent(environs []byte, secrets []Secret, value func(string) string) error {
+	if len(secrets) == 0 {
+		return nil
+	}
+
+	if !bytes.Contains(environs, []byte("PATH=")) {
+		return errors.New("read no process environment")
+	}
+
+	var errs []error
+
+	for _, s := range secrets {
+		v := value(s.Name)
+
+		switch {
+		case v == "":
+			errs = append(errs, fmt.Errorf("%s is not set in sbx's environment, so it can't be compared", s.Name))
+		case bytes.Contains(environs, []byte(v)):
+			errs = append(errs, fmt.Errorf("the value of %s is in a guest process environment", s.Name))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // EachMount runs fn on every mount. No mounts at all is a failure: nothing was checked.

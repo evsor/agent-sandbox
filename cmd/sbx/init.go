@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/evsor/agent-sandbox/internal/config"
 	"github.com/evsor/agent-sandbox/internal/hostfs"
 	"github.com/evsor/agent-sandbox/internal/ssh"
 )
@@ -35,6 +36,11 @@ func (a *app) init(ctx context.Context) error {
 
 	a.useSpecName(s)
 
+	secrets, err := config.SecretValues(s.cfg.SecretNames(), a.secret)
+	if err != nil {
+		return err
+	}
+
 	if err := a.checkPrerequisites(ctx); err != nil {
 		return err
 	}
@@ -49,12 +55,12 @@ func (a *app) init(ctx context.Context) error {
 		return err
 	}
 
-	tag, err := imageTag(ctx, s)
+	tag, err := a.imageTag(ctx, s)
 	if err != nil {
 		return err
 	}
 
-	if err := a.ensureSandbox(ctx, s, tag); err != nil {
+	if err := a.ensureSandbox(ctx, s, tag, secrets); err != nil {
 		return err
 	}
 
@@ -94,7 +100,7 @@ func (a *app) checkPrerequisites(ctx context.Context) error {
 		}
 	}
 
-	if err := command(ctx, "docker", "version", "--format", "{{.Server.Version}}").Run(); err != nil {
+	if err := a.command(ctx, "docker", "version", "--format", "{{.Server.Version}}").Run(); err != nil {
 		return fmt.Errorf("docker is not usable: %w", err)
 	}
 
@@ -145,7 +151,7 @@ func (a *app) setupSSH(ctx context.Context) error {
 }
 
 // ensureSandbox creates the sandbox if it doesn't exist, or starts it if it's stopped, then gives node the mount roots.
-func (a *app) ensureSandbox(ctx context.Context, s *spec, tag string) error {
+func (a *app) ensureSandbox(ctx context.Context, s *spec, tag string, secrets map[string]string) error {
 	h, err := a.handle(ctx)
 	started := false
 
@@ -155,7 +161,7 @@ func (a *app) ensureSandbox(ctx context.Context, s *spec, tag string) error {
 			return err
 		}
 
-		if err := a.createSandbox(ctx, s, tag); err != nil {
+		if err := a.createSandbox(ctx, s, tag, secrets); err != nil {
 			return err
 		}
 

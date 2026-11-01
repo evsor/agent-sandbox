@@ -55,27 +55,28 @@ func (a *app) lock() (func(), error) {
 	return hostfs.Lock(filepath.Join(a.stateDir, "lock"))
 }
 
-// command creates a child process that logs to stderr.
-func command(ctx context.Context, name string, args ...string) *exec.Cmd {
+// command creates a child process that logs to stderr and runs without the declared secrets.
+func (a *app) command(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // argv only, never a shell
+	cmd.Env = scrubEnv(os.Environ(), a.declared, false)
 	cmd.Stderr = os.Stderr
 
 	return cmd
 }
 
-// git runs host git with the safe flags and an environment without GIT_*.
-func git(ctx context.Context, dir string, args ...string) *exec.Cmd {
+// git runs host git with the safe flags and an environment without GIT_* or the declared secrets.
+func (a *app) git(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	full := append(append([]string{"-C", dir}, safeGit...), args...)
-	cmd := command(ctx, "git", full...)
+	cmd := a.command(ctx, "git", full...)
 
-	cmd.Env = append(scrubEnv(os.Environ()), "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(scrubEnv(os.Environ(), a.declared, true), "GIT_TERMINAL_PROMPT=0")
 
 	return cmd
 }
 
 // gitOut runs a git command and returns its trimmed stdout.
-func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
-	out, err := git(ctx, dir, args...).Output()
+func (a *app) gitOut(ctx context.Context, dir string, args ...string) (string, error) {
+	out, err := a.git(ctx, dir, args...).Output()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
@@ -83,11 +84,27 @@ func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// scrubEnv drops GIT_* variables, which could redirect git to another repository, config or helper.
-func scrubEnv(env []string) []string {
+// scrubEnv drops the secrets and, with dropGit, GIT_* variables, which could redirect git to another repository, config or helper.
+func scrubEnv(env, secrets []string, dropGit bool) []string {
 	return slices.DeleteFunc(slices.Clone(env), func(kv string) bool {
-		return strings.HasPrefix(kv, "GIT_")
+		name, _, _ := strings.Cut(kv, "=")
+
+		return slices.Contains(secrets, name) || (dropGit && strings.HasPrefix(name, "GIT_"))
 	})
+}
+
+// ask prints question and reports whether the answer is yes.
+func (a *app) ask(question string) bool {
+	return strings.EqualFold(a.prompt(question+" [y/N] "), "y")
+}
+
+// prompt prints question and returns the answer. EOF counts as an empty answer.
+func (a *app) prompt(question string) string {
+	fmt.Fprint(a.out, question)
+
+	line, _ := a.in.ReadString('\n')
+
+	return strings.TrimSpace(line)
 }
 
 var errNotCheckout = errors.New("run sbx from the agent-sandbox checkout")
