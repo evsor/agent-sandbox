@@ -89,6 +89,7 @@ func newCmd(use, short string, run func(context.Context) error) *cobra.Command {
 	}
 }
 
+// noArgs rejects arguments as a usage error, so sbx exits 2.
 func noArgs(cmd *cobra.Command, args []string) error {
 	if err := cobra.NoArgs(cmd, args); err != nil {
 		return fmt.Errorf("%w: %w", errUsage, err)
@@ -97,6 +98,7 @@ func noArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// setup runs before every command: it sets the logger and the state directory, checks the msb runtime and settles the sandbox name.
 func (a *app) setup(cmd *cobra.Command) error {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(a.v.GetString("log-level"))); err != nil {
