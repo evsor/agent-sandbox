@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,6 +27,9 @@ const getentNotFound = 2
 // blockedExits are curl's exit statuses when the network refuses at once: no such name, connection refused, cut while receiving. A timeout
 // isn't among them: it could be an unblocked path where nothing answers.
 var blockedExits = []int{6, 7, 56}
+
+// repoName keeps a guest repo's name to one path element that can't be read as an option.
+var repoName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // CheckProcStatus checks /proc/self/status: the guest user is uid 1000 and can't gain privileges.
 func CheckProcStatus(status string) error {
@@ -212,6 +216,34 @@ func CheckIsPlaceholder(printed string, secrets []Secret, name string) error {
 	}
 
 	return nil
+}
+
+// CheckRepoName checks a guest repo's name, which names a directory on the host.
+func CheckRepoName(name string) error {
+	if !repoName.MatchString(name) {
+		return fmt.Errorf("repo name %q: want letters, digits, dots, dashes and underscores, starting with a letter or digit", name)
+	}
+
+	return nil
+}
+
+// CheckBranchName checks that a guest branch's name can't be read as an option. git check-ref-format, which only host git can run, does the rest.
+func CheckBranchName(name string) error {
+	if name == "" || strings.HasPrefix(name, "-") {
+		return fmt.Errorf("branch name %q: empty or starts with a dash", name)
+	}
+
+	return nil
+}
+
+// ParseCommitCount reads the output of git rev-list --count.
+func ParseCommitCount(out string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("git rev-list printed %q", out)
+	}
+
+	return n, nil
 }
 
 // EachMount runs fn on every mount. No mounts at all is a failure: nothing was checked.

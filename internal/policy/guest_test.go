@@ -395,3 +395,78 @@ func TestEachMount(t *testing.T) {
 	require.ErrorIs(t, err, errBad)
 	assert.Equal(t, []string{"/vol/work", "/vol/state"}, seen, "a failure doesn't stop the rest")
 }
+
+func TestCheckNames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		check   func(string) error
+		value   string
+		wantErr bool
+	}{
+		{name: "repo: plain", check: CheckRepoName, value: "agent-sandbox"},
+		{name: "repo: dots and underscores", check: CheckRepoName, value: "my_repo.v2"},
+		{name: "repo: nothing", check: CheckRepoName, value: "", wantErr: true},
+		{name: "repo: leading dash", check: CheckRepoName, value: "-upload-pack=evil", wantErr: true},
+		{name: "repo: current directory", check: CheckRepoName, value: ".", wantErr: true},
+		{name: "repo: parent directory", check: CheckRepoName, value: "..", wantErr: true},
+		{name: "repo: hidden", check: CheckRepoName, value: ".git", wantErr: true},
+		{name: "repo: path", check: CheckRepoName, value: "a/b", wantErr: true},
+		{name: "repo: path escape", check: CheckRepoName, value: "../../etc", wantErr: true},
+		{name: "repo: space", check: CheckRepoName, value: "a b", wantErr: true},
+		{name: "repo: trailing newline", check: CheckRepoName, value: "repo\n", wantErr: true},
+		{name: "branch: plain", check: CheckBranchName, value: "main"},
+		{name: "branch: slashes", check: CheckBranchName, value: "worktree/agent-1"},
+		{name: "branch: nothing", check: CheckBranchName, value: "", wantErr: true},
+		{name: "branch: leading dash", check: CheckBranchName, value: "--upload-pack=evil", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tt.check(tt.value)
+			if tt.wantErr {
+				require.Error(t, err)
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestParseCommitCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		out     string
+		want    int
+		wantErr bool
+	}{
+		{name: "some commits", out: "3\n", want: 3},
+		{name: "no commits", out: "0\n", want: 0},
+		{name: "no output", out: "", wantErr: true},
+		{name: "not a number", out: "fatal: bad revision\n", wantErr: true},
+		{name: "negative", out: "-1\n", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := ParseCommitCount(tt.out)
+			if tt.wantErr {
+				require.Error(t, err)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
