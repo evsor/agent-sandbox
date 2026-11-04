@@ -3,7 +3,7 @@ FROM scratch AS tools
 ADD --chown=0:0 --checksum=sha256:77b9e297e94c50336823d0f84de7ef1be60cba704601fa0d98f129f47a94987b --unpack=true \
     https://github.com/cli/cli/releases/download/v2.102.1/gh_2.102.1_linux_amd64.tar.gz /
 
-FROM node:26-trixie-slim@sha256:80eccfd7e3fa8663c84881efb6b28c7411672a337aec1769f0fb9e3adc4a4d8b
+FROM node:26-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bash-completion \
