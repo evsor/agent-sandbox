@@ -50,4 +50,4 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" sbx --notes "sbx built by release.yml from $GITHUB_SHA"
+        run: gh release create "$GITHUB_REF_NAME" sbx --title "$GITHUB_REF_NAME" --generate-notes
