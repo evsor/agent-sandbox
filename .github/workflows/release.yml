@@ -1,0 +1,53 @@
+# Builds, attests and publishes sbx as the only asset of the release vX.Y.Z when that tag is pushed on main.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write # gh release create
+  id-token: write # attestation signing
+  attestations: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the main check needs main's history
+
+      - name: Check the tag
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::the tag isn't vX.Y.Z"; exit 1; }
+          git merge-base --is-ancestor HEAD origin/main || { echo "::error::the tag isn't on main"; exit 1; }
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # a release build starts from go.sum, not a restored cache
+
+      - run: go vet ./...
+
+      - run: make test
+
+      - name: Build
+        env:
+          CGO_ENABLED: "1" # the SDK is a cgo binding
+          GOOS: linux
+          GOARCH: amd64
+        run: make build VERSION="${GITHUB_REF_NAME#v}" OUT=sbx
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: sbx
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" sbx --notes "sbx built by release.yml from $GITHUB_SHA"
