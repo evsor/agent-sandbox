@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /config
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # The SDK must match the installed msb version, so it moves only with msb, by hand.
+      - dependency-name: github.com/superradcompany/microsandbox/sdk/go
