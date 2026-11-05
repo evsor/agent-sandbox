@@ -77,7 +77,7 @@ func rootCmd() *cobra.Command {
 	a.v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	a.v.AutomaticEnv()
 
-	root.AddCommand(newInitCmd(a), newStatusCmd(a), newStopCmd(a), newVerifyCmd(a), newConnectCmd(a), newRotateCmd(a), newShipCmd(a))
+	root.AddCommand(newInitCmd(a), newStatusCmd(a), newStopCmd(a), newVerifyCmd(a), newConnectCmd(a), newRotateCmd(a), newShipCmd(a), newRebuildCmd(a))
 
 	return root
 }
