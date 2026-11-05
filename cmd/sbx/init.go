@@ -157,11 +157,11 @@ func (a *app) ensureSandbox(ctx context.Context, s *spec, tag string, secrets ma
 
 	switch {
 	case msb.IsKind(err, msb.ErrSandboxNotFound):
-		if err := a.ensureImage(ctx, s, tag); err != nil {
+		if err := a.ensureImage(ctx, s, tag, false); err != nil {
 			return err
 		}
 
-		if err := a.createSandbox(ctx, s, tag, secrets); err != nil {
+		if err := a.createSandbox(ctx, s, tag, secrets, false); err != nil {
 			return err
 		}
 

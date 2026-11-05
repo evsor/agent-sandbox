@@ -65,17 +65,19 @@ func (a *app) imageTag(ctx context.Context, s *spec) (string, error) {
 	return s.cfg.Image + ":" + sha, nil
 }
 
-// ensureImage builds the checkout's image with docker, checks it and loads it into msb.
-func (a *app) ensureImage(ctx context.Context, s *spec, tag string) error {
-	_, err := msb.Image.Get(ctx, tag)
+// ensureImage builds the checkout's image with docker, checks it and loads it into msb, unless msb has it and rebuild is false.
+func (a *app) ensureImage(ctx context.Context, s *spec, tag string, rebuild bool) error {
+	if !rebuild {
+		_, err := msb.Image.Get(ctx, tag)
 
-	switch {
-	case err == nil:
-		a.report("ok", "image "+tag+" (msb has it)")
+		switch {
+		case err == nil:
+			a.report("ok", "image "+tag+" (msb has it)")
 
-		return nil
-	case !msb.IsKind(err, msb.ErrImageNotFound):
-		return fmt.Errorf("finding image %s: %w", tag, err)
+			return nil
+		case !msb.IsKind(err, msb.ErrImageNotFound):
+			return fmt.Errorf("finding image %s: %w", tag, err)
+		}
 	}
 
 	build := a.command(ctx, "docker", "build", "-t", tag, filepath.Join(s.repo, "config"))
@@ -175,8 +177,9 @@ func (a *app) imageEnv(ctx context.Context, tag string) ([]string, error) {
 	return env, nil
 }
 
-// createSandbox creates the detached sandbox, handing msb the secret values, which never enter the guest.
-func (a *app) createSandbox(ctx context.Context, s *spec, image string, secrets map[string]string) error {
+// createSandbox creates the detached sandbox, handing msb the secret values, which never enter the guest. replace recreates an existing
+// one, keeping its volumes.
+func (a *app) createSandbox(ctx context.Context, s *spec, image string, secrets map[string]string, replace bool) error {
 	cfg := s.cfg
 
 	env, err := cfg.EnvMap()
@@ -226,7 +229,7 @@ func (a *app) createSandbox(ctx context.Context, s *spec, image string, secrets 
 	}
 	defer unlock()
 
-	sb, err := msb.CreateSandbox(ctx, a.name,
+	opts := []msb.SandboxOption{
 		msb.WithImage(image),
 		msb.WithPullPolicy(msb.PullPolicyNever), // the image is always loaded locally; never fetch a same-named one
 		msb.WithCPUs(cfg.CPUs),
@@ -241,7 +244,18 @@ func (a *app) createSandbox(ctx context.Context, s *spec, image string, secrets 
 		msb.WithNetwork(network),
 		msb.WithSecrets(entries...),
 		msb.WithDetached(),
-	)
+	}
+
+	if replace {
+		// msb refuses to replace a running sandbox: its disk volumes still count as attached.
+		if err := a.stopRunning(ctx); err != nil {
+			return err
+		}
+
+		opts = append(opts, msb.WithReplace())
+	}
+
+	sb, err := msb.CreateSandbox(ctx, a.name, opts...)
 	if err != nil {
 		return fmt.Errorf("creating sandbox %s: %w", a.name, err)
 	}
@@ -263,6 +277,28 @@ func (a *app) handle(ctx context.Context) (*msb.SandboxHandle, error) {
 	}
 
 	return h, nil
+}
+
+// stopRunning stops the sandbox if it exists and is running, and waits until it has stopped.
+func (a *app) stopRunning(ctx context.Context) error {
+	h, err := a.handle(ctx)
+	if msb.IsKind(err, msb.ErrSandboxNotFound) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if h.Status() != msb.SandboxStatusRunning {
+		return nil
+	}
+
+	if err := h.Stop(ctx); err != nil {
+		return fmt.Errorf("stopping %s: %w", a.name, err)
+	}
+
+	return nil
 }
 
 // startSandbox connects to the sandbox, starting it if needed.
@@ -414,29 +450,34 @@ func backgroundSessions(ctx context.Context, sb *msb.Sandbox) ([]agent.Session, 
 	return agent.ParseSessions([]byte(out))
 }
 
-// confirmSessions lists the background sessions and asks before an action stops them.
-func (a *app) confirmSessions(ctx context.Context, action string) error {
+// confirmSessions lists the background sessions an action stops and asks once if there are any or the caller has shown changes.
+func (a *app) confirmSessions(ctx context.Context, action string, changed bool) error {
+	var sessions []agent.Session
+
 	sb, _, err := a.runningSandbox(ctx)
-	if errors.Is(err, errNotRunning) || msb.IsKind(err, msb.ErrSandboxNotFound) {
+
+	switch {
+	case errors.Is(err, errNotRunning) || msb.IsKind(err, msb.ErrSandboxNotFound):
+		// nothing running, so no sessions to stop
+	case err != nil:
+		return err
+	default:
+		sessions, err = backgroundSessions(ctx, sb)
+
+		release(ctx, sb)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(sessions) == 0 && !changed {
 		return nil
 	}
 
-	if err != nil {
-		return err
+	if len(sessions) > 0 {
+		fmt.Fprintf(a.out, "%s stops %d background session(s):\n", action, len(sessions))
 	}
-
-	defer release(ctx, sb)
-
-	sessions, err := backgroundSessions(ctx, sb)
-	if err != nil {
-		return err
-	}
-
-	if len(sessions) == 0 {
-		return nil
-	}
-
-	fmt.Fprintf(a.out, "%s stops %d background session(s):\n", action, len(sessions))
 
 	for _, s := range sessions {
 		fmt.Fprintf(a.out, "  %q  %q  %q  %q\n", s.ID, s.State, s.Name, s.Cwd)

@@ -102,7 +102,7 @@ func (a *app) confirmRestart(ctx context.Context, h *msb.SandboxHandle, opts msb
 
 	for _, c := range plan.Changes {
 		if c.Disposition != "live" {
-			return a.confirmSessions(ctx, "Restarting the sandbox")
+			return a.confirmSessions(ctx, "Restarting the sandbox", false)
 		}
 	}
 
