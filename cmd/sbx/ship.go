@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -22,8 +21,6 @@ import (
 	"github.com/evsor/agent-sandbox/internal/policy"
 	"github.com/evsor/agent-sandbox/internal/ssh"
 )
-
-var githubRepo = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$`)
 
 // candidate is a guest branch with commits that origin doesn't have.
 type candidate struct {
@@ -199,8 +196,8 @@ func (a *app) pushTarget(repo string) (string, error) {
 	}
 
 	target := a.prompt(fmt.Sprintf("First ship of %s: which GitHub repo does it push to (owner/name)? ", repo))
-	if !githubRepo.MatchString(target) {
-		return "", fmt.Errorf("%q is not owner/name", target)
+	if err := policy.CheckGitHubRepo(target); err != nil {
+		return "", err
 	}
 
 	return target, nil

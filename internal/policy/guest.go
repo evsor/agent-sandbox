@@ -218,7 +218,7 @@ func CheckIsPlaceholder(printed string, secrets []Secret, name string) error {
 	return nil
 }
 
-// CheckRepoName checks a guest repo's name, which names a directory on the host.
+// CheckRepoName checks a repo's name, which names a directory on the host or in /workspace.
 func CheckRepoName(name string) error {
 	if !repoName.MatchString(name) {
 		return fmt.Errorf("repo name %q: want letters, digits, dots, dashes and underscores, starting with a letter or digit", name)

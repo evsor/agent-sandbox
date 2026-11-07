@@ -1,6 +1,6 @@
 // Package policy provides functions to enforce the baseline security and configuration policy for sandboxes.
 // It checks for any changes that could reach or leak from the host during init or rebuild phases, and checks what commands print in the
-// running sandbox.
+// running sandbox, and checks GitHub repo names and remote URLs.
 package policy
 
 import (
