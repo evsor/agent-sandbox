@@ -73,7 +73,7 @@ func (a *app) rotate(ctx context.Context) error {
 		fmt.Fprintf(a.out, "%s %s (%s)\n", c.Change, c.Name, c.Disposition)
 	}
 
-	// The SDK can't set header_fields on a modify, so check that the rotation kept them.
+	// The SDK can't set header_fields or passthrough hosts on a modify, so check that the rotation kept the secret bindings.
 	h, err = h.Refresh(ctx)
 	if err != nil {
 		return fmt.Errorf("re-reading sandbox %s: %w", a.name, err)
@@ -125,6 +125,8 @@ func sameSecrets(before, after []policy.Secret) error {
 			errs = append(errs, fmt.Errorf("secret %s: placeholder changed", b.Name))
 		case !slices.Equal(b.HeaderFields, after[i].HeaderFields):
 			errs = append(errs, fmt.Errorf("secret %s: header_fields changed to %v", b.Name, after[i].HeaderFields))
+		case !slices.Equal(b.Passthrough, after[i].Passthrough):
+			errs = append(errs, fmt.Errorf("secret %s: passthrough changed to %v", b.Name, after[i].Passthrough))
 		}
 	}
 

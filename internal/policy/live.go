@@ -64,15 +64,19 @@ type liveRule struct {
 }
 
 type liveSecret struct {
-	EnvVar       string `json:"env_var"`
-	Placeholder  string `json:"placeholder"`
-	AllowedHosts []struct {
-		Exact    string `json:"exact"`
-		Wildcard string `json:"wildcard"`
-	} `json:"allowed_hosts"`
-	Substitution struct {
+	EnvVar           string     `json:"env_var"`
+	Placeholder      string     `json:"placeholder"`
+	AllowedHosts     []liveHost `json:"allowed_hosts"`
+	PassthroughHosts []liveHost `json:"passthrough_hosts"`
+	Substitution     struct {
 		HeaderFields []string `json:"header_fields"`
 	} `json:"substitution"`
+}
+
+// liveHost is one stored host: exactly one of its fields is set.
+type liveHost struct {
+	Exact    string `json:"exact"`
+	Wildcard string `json:"wildcard"`
 }
 
 // FromConfigJSON builds a Spec from the live sandbox config.
@@ -168,19 +172,36 @@ func (r liveRule) rule() Rule {
 	return rule
 }
 
-// secret converts s. An allowed host that isn't exactly one exact host or one wildcard is an error.
+// secret converts s. A host that isn't exactly one exact host or one wildcard is an error.
 func (s liveSecret) secret() (Secret, error) {
 	secret := Secret{Name: s.EnvVar, HeaderFields: s.Substitution.HeaderFields, Placeholder: s.Placeholder}
 
-	for _, h := range s.AllowedHosts {
-		if (h.Exact == "") == (h.Wildcard == "") {
-			return Secret{}, fmt.Errorf("secret %s: an allowed host of an unknown shape", s.EnvVar)
-		}
+	var err error
 
-		secret.Hosts = append(secret.Hosts, h.Exact+h.Wildcard)
+	if secret.Hosts, err = s.hosts("allowed_hosts", s.AllowedHosts); err != nil {
+		return Secret{}, err
+	}
+
+	if secret.Passthrough, err = s.hosts("passthrough_hosts", s.PassthroughHosts); err != nil {
+		return Secret{}, err
 	}
 
 	return secret, nil
+}
+
+// hosts converts the stored hosts of one list, named by list. One that isn't exactly one exact host or one wildcard is an error.
+func (s liveSecret) hosts(list string, stored []liveHost) ([]string, error) {
+	var hosts []string
+
+	for _, h := range stored {
+		if (h.Exact == "") == (h.Wildcard == "") {
+			return nil, fmt.Errorf("secret %s: an entry of %s of an unknown shape", s.EnvVar, list)
+		}
+
+		hosts = append(hosts, h.Exact+h.Wildcard)
+	}
+
+	return hosts, nil
 }
 
 // liveDestination normalizes a stored destination the way classify does a sandbox.toml one.

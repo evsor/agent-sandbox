@@ -40,6 +40,11 @@ var loadFailures = []string{"Managed settings failed to load", "none of its sett
 
 var forbiddenKeys = []string{"apiKeyHelper", "policyHelper"}
 
+// APIHost is where Claude Code sends each request, with the whole conversation in its body. Every secret's placeholder must
+// pass through to it unchanged: the placeholder is visible in the guest, so it ends up in conversations (`env`, a config file),
+// and from then on each request carries it. Blocking those requests would stop the session for good.
+const APIHost = "api.anthropic.com"
+
 // IsAgentAuthVar reports whether the environment variable is an agent authentication variable for Claude. Claude should log in with subscription only.
 func IsAgentAuthVar(name string) bool {
 	return strings.HasPrefix(name, "ANTHROPIC_") || name == "CLAUDE_CODE_OAUTH_TOKEN"
@@ -131,8 +136,8 @@ func checkSettings(name string, top map[string]json.RawMessage, base bool) error
 		fail(`forceLoginMethod must be "claudeai"`)
 	}
 
-	if !holds(perms, "disableBypassPermissionsMode", "disable", base) || !holds(perms, "disableAutoMode", "disable", base) {
-		fail("bypass and auto mode must be disabled")
+	if !holds(perms, "disableBypassPermissionsMode", "disable", base) {
+		fail("bypass mode must be disabled")
 	}
 
 	for _, key := range managedOnly {

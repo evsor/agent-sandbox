@@ -19,11 +19,13 @@ import (
 	"github.com/evsor/agent-sandbox/internal/config"
 )
 
-// patSecret, patHost and livePlaceholder are the secret, a host it is bound to and its placeholder in testdata/live.json.
+// patSecret, patHost and livePlaceholder are the secret, a host it is bound to and its placeholder in testdata/live.json;
+// anthropicHost is an allowed domain there and the host the placeholder may reach unchanged.
 const (
 	patSecret       = "GITHUB_PAT"
 	patHost         = "github.com"
 	livePlaceholder = "SBX-GITHUB-PAT-PLACEHOLDER"
+	anthropicHost   = "api.anthropic.com"
 )
 
 func TestFromConfigJSON(t *testing.T) {
@@ -45,10 +47,10 @@ func TestFromConfigJSON(t *testing.T) {
 		assert.Equal(t, "restricted", spec.Security)
 		assert.Equal(t, Mount{Type: namedMount, Name: "test-sbx-state", Target: "/home/node/claude-state", Kind: diskKind, Nosuid: true, Nodev: true}, spec.Mounts[1])
 		assert.Equal(t, Rule{Action: actionDeny, Direction: egress, DestKind: kindGroup, Dest: "link-local"}, spec.Rules[2])
-		assert.Equal(t, allow(kindDomain, "api.anthropic.com"), spec.Rules[5])
+		assert.Equal(t, allow(kindDomain, anthropicHost), spec.Rules[5])
 		assert.Equal(t, []Secret{{
 			Name: patSecret, Hosts: []string{patHost, "api.github.com"},
-			HeaderFields: []string{authHeader}, Placeholder: livePlaceholder,
+			HeaderFields: []string{authHeader}, Placeholder: livePlaceholder, Passthrough: []string{anthropicHost},
 		}}, spec.Secrets)
 	})
 
@@ -128,7 +130,7 @@ func TestFromConfigJSON(t *testing.T) {
 		_, err := FromConfigJSON([]byte(`{"network": {"secrets": {"secrets": [{
 			"env_var": "GITHUB_PAT", "allowed_hosts": [{"exact": "github.com"}, {"regex": ".*"}]
 		}]}}}`), disk)
-		require.ErrorContains(t, err, "secret GITHUB_PAT: an allowed host of an unknown shape")
+		require.ErrorContains(t, err, "secret GITHUB_PAT: an entry of allowed_hosts of an unknown shape")
 	})
 
 	t.Run("a secret host stored as a bare string is an error", func(t *testing.T) {
@@ -218,4 +220,11 @@ func TestLiveDestination(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFromConfigJSONPassthroughShape(t *testing.T) {
+	t.Parallel()
+
+	_, err := FromConfigJSON([]byte(`{"network": {"secrets": {"secrets": [{"env_var": "GITHUB_PAT", "passthrough_hosts": [{}]}]}}}`), nil)
+	require.ErrorContains(t, err, "secret GITHUB_PAT: an entry of passthrough_hosts of an unknown shape")
 }
