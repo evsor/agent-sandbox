@@ -23,7 +23,7 @@ First release.
 
 ### Added
 
-- `sbx init` checks the host, builds the image from `config/`, creates and starts the sandbox, writes its SSH files and verifies it. The command is immutable
+- `sbx init` checks the host, builds the image from `config/`, creates and starts the sandbox, writes its SSH files and verifies it. The command is idempotent
 - `sbx status`, `sbx stop` and `sbx verify`. A failed boundary check in `verify` stops the sandbox
 - `sbx connect`, the SSH `ProxyCommand` for `ssh` and VS Code Remote-SSH
 - `sbx rotate` updates every secret from its host variable
