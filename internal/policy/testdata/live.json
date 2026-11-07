@@ -346,7 +346,11 @@
             }
           ],
           "env_var": "GITHUB_PAT",
-          "passthrough_hosts": [],
+          "passthrough_hosts": [
+            {
+              "exact": "api.anthropic.com"
+            }
+          ],
           "placeholder": "SBX-GITHUB-PAT-PLACEHOLDER",
           "require_tls_identity": true,
           "substitution": {

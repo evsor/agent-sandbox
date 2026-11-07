@@ -113,6 +113,7 @@ type Secret struct {
 	Allow           []string `mapstructure:"allow"`
 	Placeholder     string   `mapstructure:"placeholder"`
 	HeaderFields    []string `mapstructure:"header_fields"`
+	Passthrough     []string `mapstructure:"passthrough"`
 	ViolationAction string   `mapstructure:"violation_action"`
 }
 

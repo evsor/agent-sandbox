@@ -131,6 +131,7 @@ type Secret struct {
 	Hosts        []string
 	HeaderFields []string
 	Placeholder  string
+	Passthrough  []string // hosts that may receive the placeholder unchanged
 }
 
 // FromConfig builds a Spec from the loaded sandbox.toml and its raw bytes.
@@ -169,7 +170,7 @@ func FromConfig(cfg *config.Config, raw []byte) Spec {
 
 	for _, s := range cfg.Secrets {
 		spec.Secrets = append(spec.Secrets, Secret{
-			Name: s.Name, Hosts: s.Allow, HeaderFields: s.HeaderFields, Placeholder: s.Placeholder,
+			Name: s.Name, Hosts: s.Allow, HeaderFields: s.HeaderFields, Placeholder: s.Placeholder, Passthrough: s.Passthrough,
 		})
 	}
 
@@ -401,10 +402,15 @@ func checkSecrets(spec Spec, fail func(string, ...any)) {
 			fail("secret %s: needs hosts and header_fields, or a host that echoes headers could hand the real value to the guest", s.Name)
 		}
 
-		for _, host := range s.Hosts {
+		for _, host := range slices.Concat(s.Hosts, s.Passthrough) {
 			if !boundHost(host) {
 				fail("secret %s: host %q: name a host, or a *.suffix of at least two labels, none empty and none holding \"*\"", s.Name, host)
 			}
+		}
+
+		if !slices.Contains(s.Passthrough, claude.APIHost) {
+			fail("secret %s: add passthrough = [%q] in sandbox.toml (a sandbox created without it needs sbx rebuild): once the placeholder "+
+				"is in a Claude Code conversation, every request there carries it, and blocking them stops the session", s.Name, claude.APIHost)
 		}
 
 		if claude.IsAgentAuthVar(s.Name) {

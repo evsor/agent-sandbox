@@ -216,10 +216,11 @@ func (a *app) createSandbox(ctx context.Context, s *spec, image string, secrets 
 
 	for _, sec := range cfg.Secrets {
 		entries = append(entries, msb.Secret.Env(sec.Name, secrets[sec.Name], msb.SecretEnvOptions{
-			Allow:           sec.Allow,
-			Placeholder:     sec.Placeholder,
-			Substitution:    msb.SecretSubstitution{Headers: &headers, HeaderFields: sec.HeaderFields},
-			ViolationAction: msb.ViolationAction(sec.ViolationAction),
+			Allow:               sec.Allow,
+			AllowPlaceholderFor: sec.Passthrough,
+			Placeholder:         sec.Placeholder,
+			Substitution:        msb.SecretSubstitution{Headers: &headers, HeaderFields: sec.HeaderFields},
+			ViolationAction:     msb.ViolationAction(sec.ViolationAction),
 		}))
 	}
 

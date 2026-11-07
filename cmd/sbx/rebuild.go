@@ -271,7 +271,7 @@ func allows(cfg *config.Config) []string {
 	}
 
 	for _, s := range cfg.Secrets {
-		out = append(out, fmt.Sprintf("secret %q hosts %q header_fields %q", s.Name, s.Allow, s.HeaderFields))
+		out = append(out, fmt.Sprintf("secret %q hosts %q header_fields %q passthrough %q", s.Name, s.Allow, s.HeaderFields, s.Passthrough))
 	}
 
 	return out

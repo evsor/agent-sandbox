@@ -16,7 +16,6 @@
   "permissions": {
     "defaultMode": "acceptEdits",
     "disableBypassPermissionsMode": "disable",
-    "disableAutoMode": "disable",
     "allow": [
       "Bash(git *)",
       "Bash(npm *)",

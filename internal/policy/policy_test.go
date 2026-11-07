@@ -36,7 +36,7 @@ func validSpec() Spec {
 			{Type: namedMount, Name: "ws", Target: "/workspace", Kind: diskKind, Nosuid: true, Nodev: true},
 			{Type: namedMount, Name: "st", Target: "/home/node/claude-state", Kind: diskKind, Nosuid: true, Nodev: true},
 		},
-		Secrets:  []Secret{{Name: patSecret, Hosts: []string{patHost}, HeaderFields: []string{authHeader}}},
+		Secrets:  []Secret{{Name: patSecret, Hosts: []string{patHost}, HeaderFields: []string{authHeader}, Passthrough: []string{anthropicHost}}},
 		EnvNames: []string{"GH_TOKEN"},
 		Strings:  []string{"plain"},
 	}
@@ -46,7 +46,7 @@ func validSpec() Spec {
 	}
 
 	spec.Rules = append(spec.Rules,
-		allow(kindDomain, "api.anthropic.com"),
+		allow(kindDomain, anthropicHost),
 		allow(kindSuffix, ".githubusercontent.com"))
 
 	return spec
@@ -150,11 +150,13 @@ func TestCheck(t *testing.T) {
 		{name: "secret for a nested wildcard", mutate: func(s *Spec) { s.Secrets[0].Hosts = []string{"*.*.com"} }, wantErr: `host "*.*.com"`},
 		{name: "secret for another wildcard", mutate: func(s *Spec) { s.Secrets[0].Hosts = []string{"api.*.com"} }, wantErr: `host "api.*.com"`},
 		{name: "secret for an empty host", mutate: func(s *Spec) { s.Secrets[0].Hosts = []string{""} }, wantErr: `host ""`},
+		{name: "placeholder not passed to the Claude API", mutate: func(s *Spec) { s.Secrets[0].Passthrough = nil }, wantErr: `add passthrough = ["api.anthropic.com"]`},
+		{name: "placeholder passed to any host", mutate: func(s *Spec) { s.Secrets[0].Passthrough = []string{anthropicHost, "*"} }, wantErr: `host "*"`},
 		{name: "Anthropic secret", mutate: func(s *Spec) {
-			s.Secrets = append(s.Secrets, Secret{Name: "ANTHROPIC_API_KEY", Hosts: []string{"api.anthropic.com"}, HeaderFields: []string{"x-api-key"}})
+			s.Secrets = append(s.Secrets, Secret{Name: "ANTHROPIC_API_KEY", Hosts: []string{anthropicHost}, HeaderFields: []string{"x-api-key"}})
 		}, wantErr: "secret ANTHROPIC_API_KEY"},
 		{name: "OAuth token secret", mutate: func(s *Spec) {
-			s.Secrets = append(s.Secrets, Secret{Name: "CLAUDE_CODE_OAUTH_TOKEN", Hosts: []string{"api.anthropic.com"}, HeaderFields: []string{authHeader}})
+			s.Secrets = append(s.Secrets, Secret{Name: "CLAUDE_CODE_OAUTH_TOKEN", Hosts: []string{anthropicHost}, HeaderFields: []string{authHeader}})
 		}, wantErr: "secret CLAUDE_CODE_OAUTH_TOKEN"},
 		{name: "Anthropic env", mutate: func(s *Spec) { s.EnvNames = append(s.EnvNames, "ANTHROPIC_AUTH_TOKEN") }, wantErr: "env ANTHROPIC_AUTH_TOKEN"},
 		{name: "endpoint env", mutate: func(s *Spec) { s.EnvNames = append(s.EnvNames, "ANTHROPIC_BASE_URL") }, wantErr: "env ANTHROPIC_BASE_URL: agent credential and endpoint"},
@@ -234,6 +236,7 @@ func TestFromConfig(t *testing.T) {
 			Volumes: []config.Volume{{Name: "ws", Target: "/workspace", Kind: diskKind, Nosuid: true, Nodev: true}},
 			Secrets: []config.Secret{{
 				Name: patSecret, Allow: []string{"github.com"}, HeaderFields: []string{authHeader}, Placeholder: "PAT",
+				Passthrough: []string{anthropicHost},
 			}},
 			Env: []string{"ANTHROPIC_API_KEY=DUMMY-SECRET-123", "GH_TOKEN=", "NO_VALUE"},
 		}
@@ -242,6 +245,7 @@ func TestFromConfig(t *testing.T) {
 		assert.Equal(t, []Mount{{Type: namedMount, Name: "ws", Target: "/workspace", Kind: diskKind, Nosuid: true, Nodev: true}}, spec.Mounts)
 		assert.Equal(t, []Secret{{
 			Name: patSecret, Hosts: []string{patHost}, HeaderFields: []string{authHeader}, Placeholder: "PAT",
+			Passthrough: []string{anthropicHost},
 		}}, spec.Secrets)
 		assert.Equal(t, []string{"ANTHROPIC_API_KEY", "GH_TOKEN", "NO_VALUE"}, spec.EnvNames)
 		require.ErrorContains(t, Check(spec), "env ANTHROPIC_API_KEY")
