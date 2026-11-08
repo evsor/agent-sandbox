@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Auto mode is allowed, with the ask and deny rules still applied
+- Auto mode is allowed, the ask and deny rules still applied
 
 ### Fixed
 

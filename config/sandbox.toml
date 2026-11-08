@@ -65,24 +65,20 @@ allow_domains = [
   "files.pythonhosted.org",
 ]
 
-# Public addresses or ranges the guest may reach, on tcp:443 only. Prefer a domain: an address opens every site it holds a
-# valid certificate for, not one. TLS interception needs a name, so a client must send the server's name while connecting to
-# the address (curl --resolve): a bare https://<address> is cut, and the name doesn't resolve unless allow_domains lists it.
+# Public addresses or ranges the sandbox is allowed to reach
 allow_ips = []
 
-# Secrets. The real value stays on the host: the guest sees only the placeholder, in the variable named `name`, and the
-# network gateway swaps in the real value on requests to the `allow` hosts, in the `header_fields` headers only. A request
-# holding the placeholder anywhere else is blocked, except to the `passthrough` hosts, which get it unchanged.
+# Secrets
+# The secret's value stays on the host and never enters the sandbox.
+# The network gateway swaps in the real value on requests to the `allow` hosts, in the `header_fields` headers only.
+# A request holding the placeholder anywhere else is blocked, except to the `passthrough` hosts.
 #
-# Every secret needs passthrough = ["api.anthropic.com"], and the policy check refuses one without it. The placeholder is
-# visible in the guest, so it ends up in Claude Code conversations (`env`, this file), and Claude Code sends the whole
-# conversation to its API with every request. Blocking those would stop the session for good. The placeholder isn't
-# secret, so this leaks nothing.
+# We need to allow `api.anthropic.com` for each secret passthrough, because Claude sees the placeholders
+# and sends them out with each conversation.
 #
-# To add a secret, copy the block below and change `name` (the variable that holds the value in sbx's environment),
-# `allow`, `placeholder` (any string without "$") and `header_fields` (the header the service reads its token from). Add
-# its hosts to allow_domains if they aren't there, and if a tool reads the token from another variable, add that variable
-# set to the placeholder to `env` above, as GH_TOKEN is for gh. Then merge, export the variable and run sbx rebuild.
+# To add a secret:
+# Copy the block below and change `name`, `allow`, `placeholder` (any string without "$") and `header_fields` (the header the service reads its token from). 
+# Add its hosts to allow_domains. Then merge, export the variable and run sbx rebuild.
 
 # The read-only GitHub token.
 [[secrets]]
