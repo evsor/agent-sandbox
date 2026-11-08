@@ -65,15 +65,26 @@ allow_domains = [
   "files.pythonhosted.org",
 ]
 
-# Public addresses or ranges the guest may reach, on tcp:443 only. Prefer a domain: an address opens every site it holds a
-# valid certificate for, not one. TLS interception needs a name, so a client must send the server's name while connecting to
-# the address (curl --resolve): a bare https://<address> is cut, and the name doesn't resolve unless allow_domains lists it.
+# Public addresses or ranges the sandbox is allowed to reach
 allow_ips = []
 
-# The read-only GitHub token. Its value comes from this variable in sbx's environment and never enters the guest.
+# Secrets
+# The secret's value stays on the host and never enters the sandbox.
+# The network gateway swaps in the real value on requests to the `allow` hosts, in the `header_fields` headers only.
+# A request holding the placeholder anywhere else is blocked, except to the `passthrough` hosts.
+#
+# We need to allow `api.anthropic.com` for each secret passthrough, because Claude sees the placeholders
+# and sends them out with each conversation.
+#
+# To add a secret:
+# Copy the block below and change `name`, `allow`, `placeholder` (any string without "$") and `header_fields` (the header the service reads its token from). 
+# Add its hosts to allow_domains. Then merge, export the variable and run sbx rebuild.
+
+# The read-only GitHub token.
 [[secrets]]
 name = "GITHUB_PAT"
 allow = ["github.com", "api.github.com"]
 placeholder = "SBX-GITHUB-PAT-PLACEHOLDER"
 header_fields = ["authorization"]
+passthrough = ["api.anthropic.com"]
 violation_action = "block-and-log"

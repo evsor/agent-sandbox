@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.1] - 2026-11-07
+
+### Added
+
+- `passthrough` in a `[[secrets]]` entry of `sandbox.toml` lists hosts that may receive the secret placeholder. Every secret must include `api.anthropic.com` or the conversation will be blocked
+- Document how secrets work and how to add one, in `sandbox.toml`
+
+### Changed
+
+- Auto mode is allowed, the ask and deny rules still applied
+
+### Fixed
+
+- Claude Code sessions no longer stop once the secret's placeholder is in the conversation
+
 ## [0.3.0] - 2026-11-07
 
 ### Added

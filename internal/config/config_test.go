@@ -60,6 +60,7 @@ name = "GITHUB_PAT"
 allow = ["github.com"]
 placeholder = "PH"
 header_fields = ["authorization"]
+passthrough = ["api.anthropic.com"]
 violation_action = "block-and-log"
 `,
 			check: func(t *testing.T, cfg *Config) {
@@ -76,6 +77,7 @@ violation_action = "block-and-log"
 				assert.True(t, cfg.Network.InterceptTLS)
 				assert.Equal(t, "GITHUB_PAT", cfg.Secrets[0].Name, "secret names keep their case")
 				assert.Equal(t, []string{"authorization"}, cfg.Secrets[0].HeaderFields)
+				assert.Equal(t, []string{"api.anthropic.com"}, cfg.Secrets[0].Passthrough)
 			},
 		},
 		{name: "rejects an unknown key", body: "name = \"sb\"\nimage = \"i\"\nports = [\"80:80\"]\n", wantErr: "ports"},

@@ -34,7 +34,7 @@ func TestCheckSettings(t *testing.T) {
 			"allowManagedHooksOnly":           true,
 			"allowManagedMcpServersOnly":      true,
 			"env":                             map[string]any{"DISABLE_TELEMETRY": "1"},
-			"permissions":                     map[string]any{"disableBypassPermissionsMode": off, "disableAutoMode": off},
+			"permissions":                     map[string]any{"disableBypassPermissionsMode": off},
 		}
 	}
 
@@ -50,12 +50,10 @@ func TestCheckSettings(t *testing.T) {
 		{name: "valid settings pass"},
 		{name: "no forced login", mutate: func(s map[string]any) { delete(s, login) }, wantErr: login},
 		{name: "console login", mutate: func(s map[string]any) { s[login] = "console" }, wantErr: login},
-		{name: "bypass allowed", mutate: func(s map[string]any) {
-			s["permissions"] = map[string]any{"disableAutoMode": off}
-		}, wantErr: "bypass and auto mode"},
+		{name: "bypass allowed", mutate: func(s map[string]any) { s["permissions"] = map[string]any{} }, wantErr: "bypass mode"},
 		{name: "auto mode allowed", mutate: func(s map[string]any) {
-			s["permissions"] = map[string]any{"disableBypassPermissionsMode": off}
-		}, wantErr: "bypass and auto mode"},
+			s["permissions"] = map[string]any{"disableBypassPermissionsMode": off, "defaultMode": "auto"}
+		}},
 		{name: "managed-only hooks off", mutate: func(s map[string]any) { s["allowManagedHooksOnly"] = false }, wantErr: "allowManagedHooksOnly must be true"},
 		{name: "managed-only rules off", mutate: func(s map[string]any) { delete(s, "allowManagedPermissionRulesOnly") }, wantErr: "allowManagedPermissionRulesOnly must be true"},
 		{name: "managed-only MCP off", mutate: func(s map[string]any) { delete(s, "allowManagedMcpServersOnly") }, wantErr: "allowManagedMcpServersOnly must be true"},
@@ -65,8 +63,8 @@ func TestCheckSettings(t *testing.T) {
 			s["ForceLoginMethod"] = "claudeai"
 		}, wantErr: login},
 		{name: "bypass off only under another case", mutate: func(s map[string]any) {
-			s["permissions"] = map[string]any{"DisableBypassPermissionsMode": off, "disableAutoMode": off}
-		}, wantErr: "bypass and auto mode"},
+			s["permissions"] = map[string]any{"DisableBypassPermissionsMode": off}
+		}, wantErr: "bypass mode"},
 		{name: "apiKeyHelper", mutate: func(s map[string]any) { s["apiKeyHelper"] = "/bin/key" }, wantErr: "apiKeyHelper"},
 		{name: "policyHelper", mutate: func(s map[string]any) { s["policyHelper"] = map[string]any{"path": "/bin/policy"} }, wantErr: "policyHelper"},
 		{name: "API key in env", mutate: func(s map[string]any) {
@@ -89,7 +87,7 @@ func TestCheckSettings(t *testing.T) {
 		{name: "a drop-in changes the login", files: fstest.MapFS{drop: file(`{"forceLoginMethod": "console"}`)}, wantErr: "50-team.json: forceLoginMethod"},
 		{name: "a drop-in allows bypass", files: fstest.MapFS{
 			drop: file(`{"permissions": {"disableBypassPermissionsMode": null}}`),
-		}, wantErr: "50-team.json: bypass and auto mode"},
+		}, wantErr: "50-team.json: bypass mode"},
 		{name: "a drop-in turns managed-only hooks off", files: fstest.MapFS{
 			drop: file(`{"allowManagedHooksOnly": false}`),
 		}, wantErr: "50-team.json: allowManagedHooksOnly must be true"},
