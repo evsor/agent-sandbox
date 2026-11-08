@@ -40,7 +40,7 @@ var loadFailures = []string{"Managed settings failed to load", "none of its sett
 
 var forbiddenKeys = []string{"apiKeyHelper", "policyHelper"}
 
-// APIHost is where Claude Code sends each request
+// APIHost is where Claude Code sends each request.
 const APIHost = "api.anthropic.com"
 
 // IsAgentAuthVar reports whether the environment variable is an agent authentication variable for Claude. Claude should log in with subscription only.
