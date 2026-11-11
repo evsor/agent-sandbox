@@ -2,13 +2,6 @@
 
 This file lists the notable changes to this project. It uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format, and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added
-
-- README.md tells how to install, configure and use the sandbox, how to solve problems, and what to do after a security incident.
-- SECURITY.md describes the security model and the risks that you accept.
-
 ## [0.3.1] - 2026-11-07
 
 ### Added
