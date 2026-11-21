@@ -36,7 +36,7 @@ violation_action = "block-and-log"
 
 `sbx verify` runs after each `sbx init` and `sbx rebuild`. It checks the guest, the network blocks, the placeholders and the host file modes. If a boundary check fails, it stops the sandbox.
 
-`sbx rebuild` builds `main` as it is, direct commits included, so it does not enforce review. `sbx rebuild <sha>` also accepts each commit that a rebase merge or a fast-forward puts on `main`, though you reviewed only the final state. Your review must cover what the check does not, such as the Dockerfile packages.
+`sbx rebuild` builds your config in `~/.config/agent-sandbox/` as it is. The sandbox can't reach that directory, so agents can't change their own sandbox. A PR that agents open against `example/` changes only the default that `sbx config` copies, and it reaches your config only when you copy it there. Before it recreates the sandbox, `sbx rebuild` shows the allowlist and secret changes since the last rebuild and names the other files that changed. Your review of your own edits must cover what the check does not, such as the Dockerfile packages.
 
 ## VS Code
 

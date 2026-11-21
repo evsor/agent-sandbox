@@ -187,7 +187,7 @@ func TestCheck(t *testing.T) {
 func TestCheck_repoFiles(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile("../../config/sandbox.toml")
+	raw, err := os.ReadFile("../../example/sandbox.toml")
 	require.NoError(t, err)
 
 	cfg, err := config.Parse(raw)
@@ -196,7 +196,7 @@ func TestCheck_repoFiles(t *testing.T) {
 	require.NoError(t, Check(FromConfig(cfg, raw)))
 
 	// The repo's copy, which the Dockerfile copies there: only its settings, since the Dockerfile sets the modes.
-	require.NoError(t, claude.CheckSettings(os.DirFS(filepath.Join("../../config/image", claude.ManagedDir))))
+	require.NoError(t, claude.CheckSettings(os.DirFS(filepath.Join("../../example/image", claude.ManagedDir))))
 }
 
 func TestFromConfig(t *testing.T) {
@@ -316,7 +316,7 @@ func TestCheckImageEnv(t *testing.T) {
 func TestCheck_allowIPsEntry(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile(filepath.Join("..", "..", "config", "sandbox.toml"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "example", "sandbox.toml"))
 	require.NoError(t, err)
 
 	tests := []struct {

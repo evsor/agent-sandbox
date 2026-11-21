@@ -1,5 +1,5 @@
-// The init command: checks the host and the spec, writes sbx's SSH files, then makes sure the image and the sandbox exist, the sandbox
-// runs and node owns the volume roots, and ends by verifying the sandbox.
+// The init command: checks the host and the user config's spec, writes sbx's SSH files, then makes sure the image and the sandbox
+// exist, the sandbox runs and node owns the volume roots, and ends by verifying the sandbox.
 
 package main
 
@@ -9,34 +9,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"unicode"
 
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 
 	"github.com/spf13/cobra"
 
-	"github.com/evsor/agent-sandbox/internal/config"
-	"github.com/evsor/agent-sandbox/internal/hostfs"
 	"github.com/evsor/agent-sandbox/internal/ssh"
 )
 
 func newInitCmd(a *app) *cobra.Command {
-	return newCmd("init", "Check the host, build the image from config/, create and start the sandbox, and verify it (re-runnable)", a.init)
+	return newCmd("init", "Check the host, build the image from the config dir, create and start the sandbox, and verify it (re-runnable)", a.init)
 }
 
 func (a *app) init(ctx context.Context) error {
-	repo, err := repoRoot()
-	if err != nil {
-		return err
-	}
-
-	s, err := loadSpec(repo)
-	if err != nil {
-		return err
-	}
-
-	a.useSpecName(s)
-
-	secrets, err := config.SecretValues(s.cfg.SecretNames(), a.secret)
+	s, secrets, err := a.checkedSpec()
 	if err != nil {
 		return err
 	}
@@ -45,45 +33,35 @@ func (a *app) init(ctx context.Context) error {
 		return err
 	}
 
-	if err := s.check(); err != nil {
-		return err
-	}
-
-	a.report("ok", "policy check: "+specPath)
-
 	if err := a.setupSSH(ctx); err != nil {
 		return err
 	}
 
-	tag, err := a.imageTag(ctx, s)
+	created, err := a.ensureSandbox(ctx, s, imageTag(s), secrets)
 	if err != nil {
 		return err
 	}
 
-	if err := a.ensureSandbox(ctx, s, tag, secrets); err != nil {
+	if err := a.updateState(func(st *state) { st.Name = a.name }); err != nil {
 		return err
 	}
 
-	st, err := a.loadState()
-	if err != nil {
+	if err := a.verify(ctx); err != nil {
 		return err
 	}
 
-	st.Name, st.Clone = a.name, repo
+	// A sandbox init didn't create may run on another config, so only a new one makes this config the applied one.
+	if !created {
+		return nil
+	}
 
-	changed, err := a.saveState(st)
-	if err != nil {
+	if err := a.saveApplied(s.tree); err != nil {
 		return err
 	}
 
-	status := "ok"
-	if changed {
-		status = "made"
-	}
+	a.report("made", a.appliedDir())
 
-	a.report(status, a.statePath())
-
-	return a.verify(ctx)
+	return nil
 }
 
 func (a *app) checkPrerequisites(ctx context.Context) error {
@@ -117,10 +95,19 @@ func (a *app) setupSSH(ctx context.Context) error {
 		return fmt.Errorf("finding the state directory: %w", err)
 	}
 
-	// sbx is installed here: the ssh config runs it from there.
-	sbx, err := hostfs.HomePath(".local", "bin", "sbx")
+	// The ssh config runs the sbx that wrote it, wherever it is installed.
+	sbx, err := os.Executable()
 	if err != nil {
-		return err
+		return fmt.Errorf("finding sbx's path: %w", err)
+	}
+
+	if sbx, err = filepath.EvalSymlinks(sbx); err != nil {
+		return fmt.Errorf("finding sbx's path: %w", err)
+	}
+
+	// ssh hands the ProxyCommand to a shell, which would split the path.
+	if strings.ContainsFunc(sbx, unicode.IsSpace) {
+		return fmt.Errorf("sbx is at %q: move it to a path without whitespace, then run sbx init again", sbx)
 	}
 
 	proxy := sbx + " connect --name " + a.name
@@ -150,24 +137,27 @@ func (a *app) setupSSH(ctx context.Context) error {
 	return nil
 }
 
-// ensureSandbox creates the sandbox if it doesn't exist, or starts it if it's stopped, then gives node the mount roots.
-func (a *app) ensureSandbox(ctx context.Context, s *spec, tag string, secrets map[string]string) error {
+// ensureSandbox creates the sandbox if it doesn't exist, or starts it if it's stopped, then gives node the mount roots. It reports
+// whether it created the sandbox.
+func (a *app) ensureSandbox(ctx context.Context, s *spec, tag string, secrets map[string]string) (bool, error) {
 	h, err := a.handle(ctx)
-	started := false
+	created, started := false, false
 
 	switch {
 	case msb.IsKind(err, msb.ErrSandboxNotFound):
-		if err := a.ensureImage(ctx, s, tag, false); err != nil {
-			return err
+		if err := a.ensureImage(ctx, s, tag); err != nil {
+			return false, err
 		}
 
 		if err := a.createSandbox(ctx, s, tag, secrets, false); err != nil {
-			return err
+			return false, err
 		}
+
+		created = true
 
 		a.report("made", "sandbox "+a.name)
 	case err != nil:
-		return err
+		return false, err
 	case h.Status() == msb.SandboxStatusRunning:
 		a.report("ok", "sandbox "+a.name+" is running")
 	default:
@@ -176,7 +166,7 @@ func (a *app) ensureSandbox(ctx context.Context, s *spec, tag string, secrets ma
 
 	changed, err := a.ownMounts(ctx, s)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if started {
@@ -191,7 +181,7 @@ func (a *app) ensureSandbox(ctx context.Context, s *spec, tag string, secrets ma
 		a.report("ok", "volume roots owned by node")
 	}
 
-	return nil
+	return created, nil
 }
 
 func (a *app) report(status, what string) {

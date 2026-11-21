@@ -70,7 +70,7 @@ func TestFromConfigJSON(t *testing.T) {
 	t.Run("builds the spec FromConfig builds from the repo's sandbox.toml", func(t *testing.T) {
 		t.Parallel()
 
-		toml, err := os.ReadFile("../../config/sandbox.toml")
+		toml, err := os.ReadFile("../../example/sandbox.toml")
 		require.NoError(t, err)
 
 		cfg, err := config.Parse(toml)

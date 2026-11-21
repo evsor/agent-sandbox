@@ -4,12 +4,17 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	msb "github.com/superradcompany/microsandbox/sdk/go"
@@ -26,28 +31,61 @@ const (
 	rootUser  = "root"
 )
 
-// specPath is the sandbox spec, relative to the checkout.
-const specPath = "config/sandbox.toml"
+// specFile is the sandbox spec in the user config dir.
+const specFile = "sandbox.toml"
 
 var (
 	errNotRunning = errors.New("sandbox is not running")
 	errNoSandbox  = errors.New("no sandbox recorded: run sbx init")
 )
 
-// spec is the sandbox spec from config/sandbox.toml.
+// spec is the sandbox spec from the user config dir's sandbox.toml.
 type spec struct {
-	repo string
+	dir  string
 	cfg  *config.Config
 	raw  []byte
+	tree map[string][]byte // every file of the dir, read by checkedSpec
 }
 
-func loadSpec(repo string) (*spec, error) {
-	cfg, raw, err := config.Load(filepath.Join(repo, specPath))
+func loadSpec(dir string) (*spec, error) {
+	cfg, raw, err := config.Load(filepath.Join(dir, specFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("no config in %s: run sbx config", dir)
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	return &spec{repo: repo, cfg: cfg, raw: raw}, nil
+	return &spec{dir: dir, cfg: cfg, raw: raw}, nil
+}
+
+// checkedSpec loads the user config's spec and files, takes the sandbox name from it, reads its secrets and runs the policy check
+// on it.
+func (a *app) checkedSpec() (*spec, map[string]string, error) {
+	s, err := loadSpec(a.configDir)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if s.tree, err = readTree(s.dir); err != nil {
+		return nil, nil, err
+	}
+
+	a.useSpecName(s)
+
+	secrets, err := config.SecretValues(s.cfg.SecretNames(), a.secret)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := s.check(); err != nil {
+		return nil, nil, err
+	}
+
+	a.report("ok", "policy check: "+filepath.Join(s.dir, specFile))
+
+	return s, secrets, nil
 }
 
 // check runs the policy check on the spec.
@@ -55,32 +93,36 @@ func (s *spec) check() error {
 	return policy.Check(policy.FromConfig(s.cfg, s.raw))
 }
 
-// imageTag is the spec's image tagged with the checkout's short SHA.
-func (a *app) imageTag(ctx context.Context, s *spec) (string, error) {
-	sha, err := a.gitOut(ctx, s.repo, "rev-parse", "--short", "HEAD")
-	if err != nil {
-		return "", err
-	}
+// imageTag is the spec's image tagged with a hash of the build context: the Dockerfile, .dockerignore and image/, by sorted path and
+// content.
+func imageTag(s *spec) string {
+	h := sha256.New()
 
-	return s.cfg.Image + ":" + sha, nil
-}
-
-// ensureImage builds the checkout's image with docker, checks it and loads it into msb, unless msb has it and rebuild is false.
-func (a *app) ensureImage(ctx context.Context, s *spec, tag string, rebuild bool) error {
-	if !rebuild {
-		_, err := msb.Image.Get(ctx, tag)
-
-		switch {
-		case err == nil:
-			a.report("ok", "image "+tag+" (msb has it)")
-
-			return nil
-		case !msb.IsKind(err, msb.ErrImageNotFound):
-			return fmt.Errorf("finding image %s: %w", tag, err)
+	for _, path := range slices.Sorted(maps.Keys(s.tree)) {
+		if path == "Dockerfile" || path == ".dockerignore" || strings.HasPrefix(path, "image/") {
+			fmt.Fprintf(h, "%s\x00%d\x00", path, len(s.tree[path]))
+			h.Write(s.tree[path])
 		}
 	}
 
-	build := a.command(ctx, "docker", "build", "-t", tag, filepath.Join(s.repo, "config"))
+	return s.cfg.Image + ":" + hex.EncodeToString(h.Sum(nil))[:12]
+}
+
+// ensureImage builds the image from the user config dir with docker, checks it and loads it into msb, unless msb has it. The tag
+// is a hash of the build context, so an image under it was built from the same files and checked when it was loaded.
+func (a *app) ensureImage(ctx context.Context, s *spec, tag string) error {
+	_, err := msb.Image.Get(ctx, tag)
+
+	switch {
+	case err == nil:
+		a.report("ok", "image "+tag+" (msb has it)")
+
+		return nil
+	case !msb.IsKind(err, msb.ErrImageNotFound):
+		return fmt.Errorf("finding image %s: %w", tag, err)
+	}
+
+	build := a.command(ctx, "docker", "build", "-t", tag, s.dir)
 	build.Stdout = os.Stderr
 
 	if err := build.Run(); err != nil {

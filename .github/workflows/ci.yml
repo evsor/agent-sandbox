@@ -66,4 +66,4 @@ jobs:
         with:
           persist-credentials: false
 
-      - run: docker build config/
+      - run: docker build example/

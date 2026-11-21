@@ -125,7 +125,7 @@ func ValidName(name string) bool { return validName.MatchString(name) }
 
 // Load reads the TOML file at path and returns its config and raw bytes, which the policy check scans; see Parse.
 func Load(path string) (*Config, []byte, error) {
-	raw, err := os.ReadFile(path) //nolint:gosec // the spec of the checkout sbx runs from
+	raw, err := os.ReadFile(path) //nolint:gosec // the spec in the user config dir
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}

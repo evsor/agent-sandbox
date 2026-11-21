@@ -3,9 +3,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,13 +26,12 @@ var safeGit = []string{
 	"-c", "fetch.recurseSubmodules=false",
 }
 
-// state is what sbx records between runs in state.json.
+// state is what sbx records between runs in state.json. Fields older versions wrote, such as clone and rebuilt_sha, are ignored.
 type state struct {
-	Name       string            `json:"name,omitempty"`        // the sandbox init or rebuild created
-	Clone      string            `json:"clone,omitempty"`       // the checkout init or rebuild ran from
-	RebuiltSHA string            `json:"rebuilt_sha,omitempty"` // the commit last rebuilt
-	Image      string            `json:"image,omitempty"`       // the image tag it was rebuilt with
-	Repos      map[string]string `json:"repos,omitempty"`       // the GitHub repo each guest repo ships to
+	Name      string            `json:"name,omitempty"`       // the sandbox init or rebuild created
+	ConfigDir string            `json:"config_dir,omitempty"` // the user config dir sbx config wrote
+	Image     string            `json:"image,omitempty"`      // the image tag it was rebuilt with
+	Repos     map[string]string `json:"repos,omitempty"`      // the GitHub repo each guest repo ships to
 }
 
 // statePath is the state file.
@@ -50,6 +50,30 @@ func (a *app) loadState() (state, error) {
 // saveState writes the state and reports whether it changed.
 func (a *app) saveState(st state) (bool, error) {
 	return hostfs.WriteJSON(a.statePath(), st)
+}
+
+// updateState applies change to the recorded state, saves it and reports the state file as made or ok.
+func (a *app) updateState(change func(*state)) error {
+	st, err := a.loadState()
+	if err != nil {
+		return err
+	}
+
+	change(&st)
+
+	changed, err := a.saveState(st)
+	if err != nil {
+		return err
+	}
+
+	status := "ok"
+	if changed {
+		status = "made"
+	}
+
+	a.report(status, a.statePath())
+
+	return nil
 }
 
 // lock takes the lock on the state directory.
@@ -109,29 +133,86 @@ func (a *app) prompt(question string) string {
 	return strings.TrimSpace(line)
 }
 
-var errNotCheckout = errors.New("run sbx from the agent-sandbox checkout")
+// appliedDir holds a copy of the user config dir as it was at the last rebuild that verified.
+func (a *app) appliedDir() string {
+	return filepath.Join(a.stateDir, "applied")
+}
 
-// repoRoot returns the working directory, which contains config.
-func repoRoot() (string, error) {
-	dir, err := os.Getwd()
+// readTree reads every file under dir, keyed by its slash-separated path relative to dir.
+func readTree(dir string) (map[string][]byte, error) {
+	fsys := os.DirFS(dir)
+	tree := map[string][]byte{}
+
+	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+
+		data, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			return err
+		}
+
+		tree[path] = data
+
+		return nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("finding the working directory: %w", err)
+		return nil, fmt.Errorf("reading %s: %w", dir, err)
 	}
 
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			if _, err := os.Stat(filepath.Join(dir, specPath)); err != nil {
-				return "", errNotCheckout
-			}
+	return tree, nil
+}
 
-			return dir, nil
+// diffTrees returns the paths, sorted, whose content differs between the trees or that only one of them has.
+func diffTrees(a, b map[string][]byte) []string {
+	var paths []string
+
+	for path, data := range a {
+		if other, ok := b[path]; !ok || !bytes.Equal(data, other) {
+			paths = append(paths, path)
 		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", errNotCheckout
-		}
-
-		dir = parent
 	}
+
+	for path := range b {
+		if _, ok := a[path]; !ok {
+			paths = append(paths, path)
+		}
+	}
+
+	slices.Sort(paths)
+
+	return paths
+}
+
+// saveApplied replaces the applied dir with tree, written to a new directory first so a failed copy leaves the old one.
+func (a *app) saveApplied(tree map[string][]byte) error {
+	tmp, err := os.MkdirTemp(a.stateDir, "applied-")
+	if err != nil {
+		return fmt.Errorf("creating a temporary directory: %w", err)
+	}
+
+	defer func() { _ = os.RemoveAll(tmp) }()
+
+	for path, data := range tree {
+		full := filepath.Join(tmp, filepath.FromSlash(path))
+
+		if err := hostfs.EnsureDir(filepath.Dir(full)); err != nil {
+			return err
+		}
+
+		if _, err := hostfs.WriteIfChanged(full, data); err != nil {
+			return err
+		}
+	}
+
+	if err := os.RemoveAll(a.appliedDir()); err != nil {
+		return fmt.Errorf("removing the old %s: %w", a.appliedDir(), err)
+	}
+
+	if err := os.Rename(tmp, a.appliedDir()); err != nil {
+		return fmt.Errorf("saving %s: %w", a.appliedDir(), err)
+	}
+
+	return nil
 }

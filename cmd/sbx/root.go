@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -34,10 +35,13 @@ type app struct {
 	name     string
 	nameSet  bool // --name or SBX_NAME given
 	stateDir string
-	declared []string          // secret variables, removed from sbx's environment and every child's
-	secrets  map[string]string // their values, read once
-	in       *bufio.Reader
-	out      io.Writer
+	// configDir is the user config dir: --config-dir or SBX_CONFIG_DIR, else the one sbx config recorded, else the default.
+	configDir   string
+	configDirOK bool              // given or recorded, so sbx config doesn't ask
+	declared    []string          // secret variables, removed from sbx's environment and every child's
+	secrets     map[string]string // their values, read once
+	in          *bufio.Reader
+	out         io.Writer
 }
 
 func rootCmd() *cobra.Command {
@@ -63,11 +67,12 @@ func rootCmd() *cobra.Command {
 	})
 
 	flags := root.PersistentFlags()
-	flags.String("name", "", "sandbox name (default: config/sandbox.toml)")
+	flags.String("name", "", "sandbox name (default: the name in sandbox.toml)")
+	flags.String("config-dir", "", "config directory (default: the one sbx config recorded, else ~/.config/agent-sandbox)")
 	flags.String("state-dir", "", "state directory (default ~/.local/state/agent-sandbox)")
 	flags.String("log-level", "info", "log level: debug, info, warn or error")
 
-	for _, key := range []string{"name", "state-dir", "log-level"} {
+	for _, key := range []string{"name", "config-dir", "state-dir", "log-level"} {
 		if err := a.v.BindPFlag(key, flags.Lookup(key)); err != nil {
 			panic(err)
 		}
@@ -77,7 +82,7 @@ func rootCmd() *cobra.Command {
 	a.v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	a.v.AutomaticEnv()
 
-	root.AddCommand(newInitCmd(a), newStatusCmd(a), newStopCmd(a), newVerifyCmd(a), newConnectCmd(a), newRotateCmd(a), newShipCmd(a), newRebuildCmd(a), newCloneCmd(a))
+	root.AddCommand(newConfigCmd(a), newInitCmd(a), newStatusCmd(a), newStopCmd(a), newVerifyCmd(a), newConnectCmd(a), newRotateCmd(a), newShipCmd(a), newRebuildCmd(a), newCloneCmd(a))
 
 	return root
 }
@@ -104,7 +109,7 @@ func noArgs(cmd *cobra.Command, args []string) error {
 }
 
 // setup runs before every command: it sets the logger and the state directory, checks the msb runtime, settles the sandbox name and
-// reads the secrets.
+// the config dir, and reads the secrets.
 func (a *app) setup(cmd *cobra.Command) error {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(a.v.GetString("log-level"))); err != nil {
@@ -150,16 +155,30 @@ func (a *app) setup(cmd *cobra.Command) error {
 		return fmt.Errorf("%w: sandbox name %q: want lowercase letters, digits and dashes", errUsage, a.name)
 	}
 
+	a.configDir = a.v.GetString("config-dir")
+	if a.configDir == "" {
+		a.configDir = st.ConfigDir
+	}
+
+	a.configDirOK = a.configDir != ""
+
+	if a.configDir == "" {
+		dir, err := os.UserConfigDir()
+		if err != nil {
+			return fmt.Errorf("finding the config directory: %w", err)
+		}
+
+		a.configDir = filepath.Join(dir, "agent-sandbox")
+	}
+
 	return a.declareKnown(cmd.Context())
 }
 
-// declareKnown learns the secret names before sbx starts a child process: from the checkout's spec and the live sandbox.
+// declareKnown learns the secret names before sbx starts a child process: from the user config's spec and the live sandbox.
 func (a *app) declareKnown(ctx context.Context) error {
-	// Outside a checkout there is no spec. A broken one is for init to report: the other commands don't need it.
-	if repo, err := repoRoot(); err == nil {
-		if s, err := loadSpec(repo); err == nil {
-			a.declare(s.cfg.SecretNames()...)
-		}
+	// A missing or broken spec is for init and rebuild to report: the other commands don't need it.
+	if s, err := loadSpec(a.configDir); err == nil {
+		a.declare(s.cfg.SecretNames()...)
 	}
 
 	if a.name == "" {

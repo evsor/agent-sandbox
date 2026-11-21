@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"strings"
 
 	msb "github.com/superradcompany/microsandbox/sdk/go"
 
@@ -44,9 +46,7 @@ func (a *app) status(ctx context.Context) error {
 
 	fmt.Fprintf(a.out, "sandbox  %s: %s\nimage    %s\n", a.name, h.Status(), live.Image)
 
-	if err := a.pendingRebuild(ctx); err != nil {
-		return err
-	}
+	a.pendingRebuild()
 
 	sb, _, err := a.runningSandbox(ctx)
 	if errors.Is(err, errNotRunning) {
@@ -83,34 +83,32 @@ func (a *app) status(ctx context.Context) error {
 	return nil
 }
 
-// pendingRebuild compares the last rebuilt commit with origin/main as of the clone's last fetch.
-func (a *app) pendingRebuild(ctx context.Context) error {
-	st, err := a.loadState()
-	if err != nil {
-		return err
-	}
-
-	if st.RebuiltSHA == "" {
+// pendingRebuild compares the user config dir with the config the last rebuild applied.
+func (a *app) pendingRebuild() {
+	applied, err := readTree(a.appliedDir())
+	if errors.Is(err, fs.ErrNotExist) {
 		fmt.Fprintln(a.out, "rebuild  never rebuilt")
 
-		return nil
+		return
 	}
 
-	head, err := a.gitOut(ctx, st.Clone, "rev-parse", "origin/main")
-	if err != nil {
-		// A clone that moved shouldn't hide the rest of the report.
+	tree, terr := readTree(a.configDir)
+	if errors.Is(terr, fs.ErrNotExist) {
+		terr = fmt.Errorf("no config in %s: run sbx config", a.configDir)
+	}
+
+	if err = errors.Join(err, terr); err != nil {
+		// An unreadable config shouldn't hide the rest of the report.
 		fmt.Fprintf(a.out, "rebuild  unknown: %v\n", err)
 
-		return nil
+		return
 	}
 
-	if st.RebuiltSHA == head {
-		fmt.Fprintf(a.out, "rebuild  up to date (%.12s)\n", head)
+	if files := diffTrees(applied, tree); len(files) > 0 {
+		fmt.Fprintf(a.out, "rebuild  pending (run sbx rebuild): %s\n", strings.Join(files, ", "))
 	} else {
-		fmt.Fprintf(a.out, "rebuild  pending (run sbx rebuild): at %.12s, origin/main is %.12s\n", st.RebuiltSHA, head)
+		fmt.Fprintln(a.out, "rebuild  up to date")
 	}
-
-	return nil
 }
 
 // volumeUsage reads usage with df in the guest: the SDK reports 0 for disk volumes.

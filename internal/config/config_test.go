@@ -116,7 +116,7 @@ violation_action = "block-and-log"
 func TestLoad_repoFile(t *testing.T) {
 	t.Parallel()
 
-	cfg, _, err := Load(filepath.Join("..", "..", "config", "sandbox.toml"))
+	cfg, _, err := Load(filepath.Join("..", "..", "example", "sandbox.toml"))
 	require.NoError(t, err)
 
 	assert.Equal(t, "claude-sandbox", cfg.Name)

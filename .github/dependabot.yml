@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: docker
-    directory: /config
+    directory: /example
     schedule:
       interval: weekly
 
