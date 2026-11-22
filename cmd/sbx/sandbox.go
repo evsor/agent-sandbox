@@ -26,28 +26,30 @@ const (
 	rootUser  = "root"
 )
 
-// specPath is the sandbox spec, relative to the checkout.
-const specPath = "config/sandbox.toml"
-
 var (
 	errNotRunning = errors.New("sandbox is not running")
 	errNoSandbox  = errors.New("no sandbox recorded: run sbx init")
 )
 
-// spec is the sandbox spec from config/sandbox.toml.
+// spec is the sandbox spec from sandbox.toml in the user config dir.
 type spec struct {
-	repo string
-	cfg  *config.Config
-	raw  []byte
+	dir string // the user config dir
+	cfg *config.Config
+	raw []byte
 }
 
-func loadSpec(repo string) (*spec, error) {
-	cfg, raw, err := config.Load(filepath.Join(repo, specPath))
+func loadSpec(dir string) (*spec, error) {
+	cfg, raw, err := config.Load(filepath.Join(dir, config.SpecFile))
 	if err != nil {
 		return nil, err
 	}
 
-	return &spec{repo: repo, cfg: cfg, raw: raw}, nil
+	return &spec{dir: dir, cfg: cfg, raw: raw}, nil
+}
+
+// path is the spec's file.
+func (s *spec) path() string {
+	return filepath.Join(s.dir, config.SpecFile)
 }
 
 // check runs the policy check on the spec.
@@ -55,17 +57,27 @@ func (s *spec) check() error {
 	return policy.Check(policy.FromConfig(s.cfg, s.raw))
 }
 
-// imageTag is the spec's image tagged with the checkout's short SHA.
-func (a *app) imageTag(ctx context.Context, s *spec) (string, error) {
-	sha, err := a.gitOut(ctx, s.repo, "rev-parse", "--short", "HEAD")
+// imageTag is the spec's image tagged with a hash of the build context, so a changed build gets a new tag.
+func (s *spec) imageTag() (string, error) {
+	sum, err := config.BuildHash(os.DirFS(s.dir))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("hashing the build context in %s: %w", s.dir, err)
 	}
 
-	return s.cfg.Image + ":" + sha, nil
+	return s.cfg.Image + ":" + sum[:12], nil
 }
 
-// ensureImage builds the checkout's image with docker, checks it and loads it into msb, unless msb has it and rebuild is false.
+// dirHash hashes what a create uses from the user config dir, which status compares with the last verified create.
+func dirHash(dir string) (string, error) {
+	sum, err := config.DirHash(os.DirFS(dir))
+	if err != nil {
+		return "", fmt.Errorf("hashing %s: %w", dir, err)
+	}
+
+	return sum, nil
+}
+
+// ensureImage builds the image from the user config dir with docker, checks it and loads it into msb, unless msb has it and rebuild is false.
 func (a *app) ensureImage(ctx context.Context, s *spec, tag string, rebuild bool) error {
 	if !rebuild {
 		_, err := msb.Image.Get(ctx, tag)
@@ -80,7 +92,7 @@ func (a *app) ensureImage(ctx context.Context, s *spec, tag string, rebuild bool
 		}
 	}
 
-	build := a.command(ctx, "docker", "build", "-t", tag, filepath.Join(s.repo, "config"))
+	build := a.command(ctx, "docker", "build", "-t", tag, s.dir)
 	build.Stdout = os.Stderr
 
 	if err := build.Run(); err != nil {

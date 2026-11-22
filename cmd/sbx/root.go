@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	example "github.com/evsor/agent-sandbox/config"
 	"github.com/evsor/agent-sandbox/internal/config"
 	"github.com/evsor/agent-sandbox/internal/hostfs"
 )
@@ -30,14 +32,15 @@ var errUsage = errors.New("usage")
 
 // app holds sbx's settings.
 type app struct {
-	v        *viper.Viper
-	name     string
-	nameSet  bool // --name or SBX_NAME given
-	stateDir string
-	declared []string          // secret variables, removed from sbx's environment and every child's
-	secrets  map[string]string // their values, read once
-	in       *bufio.Reader
-	out      io.Writer
+	v         *viper.Viper
+	name      string
+	nameSet   bool // --name or SBX_NAME given
+	stateDir  string
+	configDir string            // the user config dir, absolute
+	declared  []string          // secret variables, removed from sbx's environment and every child's
+	secrets   map[string]string // their values, read once
+	in        *bufio.Reader
+	out       io.Writer
 }
 
 func rootCmd() *cobra.Command {
@@ -63,11 +66,12 @@ func rootCmd() *cobra.Command {
 	})
 
 	flags := root.PersistentFlags()
-	flags.String("name", "", "sandbox name (default: config/sandbox.toml)")
+	flags.String("name", "", "sandbox name (default: sandbox.toml in the config dir)")
 	flags.String("state-dir", "", "state directory (default ~/.local/state/agent-sandbox)")
+	flags.String("config-dir", "", "user config dir (default: the one sbx init recorded, else ~/.config/agent-sandbox)")
 	flags.String("log-level", "info", "log level: debug, info, warn or error")
 
-	for _, key := range []string{"name", "state-dir", "log-level"} {
+	for _, key := range []string{"name", "state-dir", "config-dir", "log-level"} {
 		if err := a.v.BindPFlag(key, flags.Lookup(key)); err != nil {
 			panic(err)
 		}
@@ -104,7 +108,7 @@ func noArgs(cmd *cobra.Command, args []string) error {
 }
 
 // setup runs before every command: it sets the logger and the state directory, checks the msb runtime, settles the sandbox name and
-// reads the secrets.
+// the config dir, and reads the secrets.
 func (a *app) setup(cmd *cobra.Command) error {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(a.v.GetString("log-level"))); err != nil {
@@ -150,15 +154,51 @@ func (a *app) setup(cmd *cobra.Command) error {
 		return fmt.Errorf("%w: sandbox name %q: want lowercase letters, digits and dashes", errUsage, a.name)
 	}
 
+	if err := a.setConfigDir(st); err != nil {
+		return err
+	}
+
 	return a.declareKnown(cmd.Context())
 }
 
-// declareKnown learns the secret names before sbx starts a child process: from the checkout's spec and the live sandbox.
+// setConfigDir takes the user config dir from --config-dir or SBX_CONFIG_DIR, else the one init recorded, else the default.
+func (a *app) setConfigDir(st state) error {
+	dir := a.v.GetString("config-dir")
+	if dir == "" {
+		dir = st.ConfigDir
+	}
+
+	if dir == "" {
+		base, err := os.UserConfigDir()
+		if err != nil {
+			return fmt.Errorf("finding the config directory: %w", err)
+		}
+
+		dir = filepath.Join(base, "agent-sandbox")
+	}
+
+	// It's recorded in state.json, for commands run from any directory.
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("finding the config directory: %w", err)
+	}
+
+	a.configDir = abs
+
+	return nil
+}
+
+// declareKnown learns the secret names before sbx starts a child process: from the config dir's spec, the example's, which init
+// writes into a dir without one, and the live sandbox.
 func (a *app) declareKnown(ctx context.Context) error {
-	// Outside a checkout there is no spec. A broken one is for init to report: the other commands don't need it.
-	if repo, err := repoRoot(); err == nil {
-		if s, err := loadSpec(repo); err == nil {
-			a.declare(s.cfg.SecretNames()...)
+	// A missing or broken spec is for init and rebuild to report: the other commands don't need it.
+	if s, err := loadSpec(a.configDir); err == nil {
+		a.declare(s.cfg.SecretNames()...)
+	}
+
+	if raw, err := example.FS.ReadFile(config.SpecFile); err == nil {
+		if cfg, err := config.Parse(raw); err == nil {
+			a.declare(cfg.SecretNames()...)
 		}
 	}
 

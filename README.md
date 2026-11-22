@@ -26,38 +26,29 @@ It creates and manages a long-lived local development environment for AI agents,
 
 ## Installation
 
-Download the binary from releases to `~/.local/bin`(the SSH config expects it there)
+Download the binary from releases to any directory on your `PATH`. The SSH config runs `sbx` from where `sbx init` ran it, so run `sbx init` again after you move it.
 
 ## Getting started
 
-1. Fork or clone this repo
-2. Add your git identity below `[user]` in `config/image/etc/gitconfig`.
-
-   ```ini
-   [user]
-   	name = Your Name
-   	email = 12345+you@users.noreply.github.com
-   	useConfigOnly = true
-   ```
-
-   Merge this to `main` first. `sbx rebuild` builds only merged `main`, and git needs an identity to commit inside the sandbox.
-3. Export intended secrets in the shell that you use for `sbx`
-4. Run `sbx init`. It checks the host, builds the image, runs the policy check, starts the sandbox and verifies it. It's idempotent, so you can rerun it safely
-5. Add the `Include` line that `sbx init` prints to the top of `~/.ssh/config`, before any `Host` line:
+1. Export `GITHUB_PAT`, a read-only GitHub token, in the shell that you use for `sbx`.
+2. Run `sbx init`. It writes the example config to `~/.config/agent-sandbox/` and asks for the git name and email for commits in the sandbox (Enter takes your host's). Then it checks the host, builds the image, runs the policy check, starts the sandbox and verifies it. It never changes a file in `~/.config/agent-sandbox/` that exists, so you can rerun it safely.
+3. Add the `Include` line that `sbx init` prints to the top of `~/.ssh/config`, before any `Host` line:
 
    ```text
    Include ~/.local/state/agent-sandbox/ssh/config
    ```
 
-6. (Optional)In VS Code, install Remote-SSH. Add these user settings. Keep `remote.SSH.localServerDownload` at `auto`.
+4. (Optional)In VS Code, install Remote-SSH. Add these user settings. Keep `remote.SSH.localServerDownload` at `auto`.
 
    ```json
    "remote.autoForwardPorts": false,
    "remote.SSH.defaultExtensions": ["Anthropic.claude-code"]
    ```
 
-7. Run `sbx clone <owner/name>...` to clone your repos into `/workspace`. Or clone them from inside the sandbox
-8. Connect VS Code to `claude-sandbox`. Open a folder in `/workspace`.
+5. Run `sbx clone <owner/name>...` to clone your repos into `/workspace`. Or clone them from inside the sandbox
+6. Connect VS Code to `claude-sandbox`. Open a folder in `/workspace`.
+
+To keep the config in git, set `SBX_CONFIG_DIR` (or pass `--config-dir`) to the `config/` directory of a checkout when you run `sbx init`. `sbx` remembers it.
 
 ## Daily use
 
@@ -71,19 +62,21 @@ Download the binary from releases to `~/.local/bin`(the SSH config expects it th
 
 ### Recreate the sandbox
 
-`sbx rebuild` builds the image from `origin/main` and recreates the sandbox. The host clone must have no uncommitted changes.
-The volumes are kept untouched. Before it starts, it shows the allowlist and secret changes and the background sessions that it will stop. If the result is `VERIFY FAILED`, it prints the last good commit. Run `sbx rebuild <sha>` with that commit. It accepts only a merge or a direct commit on `main`.
+`sbx rebuild` builds the image from `~/.config/agent-sandbox/` as it is and recreates the sandbox.
+The volumes are kept untouched. Before it starts, it shows the allowlist and secret changes since the last verified create and the background sessions that it will stop. If the result is `VERIFY FAILED`, fix the config and run `sbx rebuild` again. The `sandbox.toml` of the last verified create is `~/.local/state/agent-sandbox/applied.toml`.
 
 ## Changing the sandbox
 
-Make the change in a PR. After you merge it, run `sbx rebuild`.
+Edit the files in `~/.config/agent-sandbox/`, then run `sbx rebuild`. `sbx status` shows a pending rebuild while they differ from the last verified create.
 
-| To change | Edit |
+| To change | Edit, in `~/.config/agent-sandbox/` |
 |---|---|
-| Packages | `config/Dockerfile` |
-| Claude Code rules | `managed-settings.json` and `CLAUDE.md` in `config/image/etc/claude-code/` |
-| Git defaults | `config/image/etc/gitconfig` |
-| CPUs, memory, allowed hosts, secrets | `config/sandbox.toml` |
+| Packages | `Dockerfile` |
+| Claude Code rules | `managed-settings.json` and `CLAUDE.md` in `image/etc/claude-code/` |
+| Git name, email and defaults | `image/etc/gitconfig` |
+| CPUs, memory, allowed hosts, secrets | `sandbox.toml` |
+
+A new `sbx` release can bring a newer example config. `sbx init` writes only the files that are missing, so copy the changes you want from `config/` in this repo by hand. The changelog lists them.
 
 `sbx` checks a security baseline that a config change cannot override:
 
@@ -108,19 +101,18 @@ Because of that **each secret must have `passthrough = ["api.anthropic.com"]`.**
 
 ### To add a secret:
 
-1. Copy the `GITHUB_PAT` block in `config/sandbox.toml`. Change `name` (the host variable), `allow`, `placeholder` (no `$`) and `header_fields`.
+1. Copy the `GITHUB_PAT` block in `~/.config/agent-sandbox/sandbox.toml`. Change `name` (the host variable), `allow`, `placeholder` (no `$`) and `header_fields`.
 2. Add the hosts to `allow_domains`.
 3. If a tool reads its token from a variable, add an `env` entry with the placeholder, as for `GH_TOKEN`.
-4. Merge the PR.
-5. Export the variable on the host. Then run `sbx rebuild`.
+4. Export the variable on the host. Then run `sbx rebuild`.
 
 ## Troubleshooting
 
-If a tool shows NXDOMAIN or "could not resolve host", the host is not on the allowlist. Add it to `allow_domains`, merge the PR and rebuild.
+If a tool shows NXDOMAIN or "could not resolve host", the host is not on the allowlist. Add it to `allow_domains` in `~/.config/agent-sandbox/sandbox.toml` and run `sbx rebuild`.
 
 If a Claude session stops answering after some minutes of retries, the gateway probably blocks a placeholder on its way to the Claude API. Search msb's runtime log on the host:
 
-If it finds a match, add the missing `passthrough`, merge the PR and rebuild. After the rebuild, the session works again.
+If it finds a match, add the missing `passthrough` in `~/.config/agent-sandbox/sandbox.toml` and run `sbx rebuild`. After the rebuild, the session works again.
 
 The SSH config sets keepalives that end a dead connection. If SSH stops responding, make sure that the `Include` line is at the top of `~/.ssh/config`. Then run `sbx init` to write the SSH config again.
 
@@ -133,5 +125,5 @@ If you think that the sandbox or an agent is compromised:
 1. Run `sbx stop`.
 2. Run `/logout` in the sandbox. Then revoke the session in your claude.ai settings.
 3. Revoke the GitHub token.
-4. Before you rebuild or release, examine recent PRs and commits on `main`, especially in `config/`, `cmd/` and `internal/`.
+4. Before you run `sbx rebuild`, examine the files in `~/.config/agent-sandbox/`. The `sandbox.toml` of the last verified create is `~/.local/state/agent-sandbox/applied.toml`. Before you install a release, examine its changes in `cmd/` and `internal/`.
 

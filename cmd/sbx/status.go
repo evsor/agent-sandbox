@@ -44,7 +44,7 @@ func (a *app) status(ctx context.Context) error {
 
 	fmt.Fprintf(a.out, "sandbox  %s: %s\nimage    %s\n", a.name, h.Status(), live.Image)
 
-	if err := a.pendingRebuild(ctx); err != nil {
+	if err := a.pendingRebuild(); err != nil {
 		return err
 	}
 
@@ -83,31 +83,31 @@ func (a *app) status(ctx context.Context) error {
 	return nil
 }
 
-// pendingRebuild compares the last rebuilt commit with origin/main as of the clone's last fetch.
-func (a *app) pendingRebuild(ctx context.Context) error {
+// pendingRebuild compares the user config dir with the one of the last verified create.
+func (a *app) pendingRebuild() error {
 	st, err := a.loadState()
 	if err != nil {
 		return err
 	}
 
-	if st.RebuiltSHA == "" {
+	if st.ConfigHash == "" {
 		fmt.Fprintln(a.out, "rebuild  never rebuilt")
 
 		return nil
 	}
 
-	head, err := a.gitOut(ctx, st.Clone, "rev-parse", "origin/main")
+	hash, err := dirHash(a.configDir)
 	if err != nil {
-		// A clone that moved shouldn't hide the rest of the report.
+		// A config dir that can't be read shouldn't hide the rest of the report.
 		fmt.Fprintf(a.out, "rebuild  unknown: %v\n", err)
 
 		return nil
 	}
 
-	if st.RebuiltSHA == head {
-		fmt.Fprintf(a.out, "rebuild  up to date (%.12s)\n", head)
+	if hash == st.ConfigHash {
+		fmt.Fprintln(a.out, "rebuild  up to date")
 	} else {
-		fmt.Fprintf(a.out, "rebuild  pending (run sbx rebuild): at %.12s, origin/main is %.12s\n", st.RebuiltSHA, head)
+		fmt.Fprintln(a.out, "rebuild  pending (run sbx rebuild)")
 	}
 
 	return nil
