@@ -1,4 +1,4 @@
-// Package config loads the sandbox spec from sandbox.toml.
+// Package config loads the sandbox spec from sandbox.toml, and seeds and hashes the user config dir that holds it.
 package config
 
 import (
@@ -125,7 +125,7 @@ func ValidName(name string) bool { return validName.MatchString(name) }
 
 // Load reads the TOML file at path and returns its config and raw bytes, which the policy check scans; see Parse.
 func Load(path string) (*Config, []byte, error) {
-	raw, err := os.ReadFile(path) //nolint:gosec // the spec of the checkout sbx runs from
+	raw, err := os.ReadFile(path) //nolint:gosec // a spec in the user config dir or sbx's state dir
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}

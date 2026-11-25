@@ -1,13 +1,14 @@
-// Sbx manages the local sandbox: a microsandbox microVM, built from the config/ directory of the agent-sandbox checkout, in which
+// Sbx manages the local sandbox: a microsandbox microVM, built from the user config dir (default ~/.config/agent-sandbox), in which
 // Claude Code runs.
 //
 // Usage:
 //
 //	sbx [flags] <command>
 //
-// Run sbx init from the agent-sandbox checkout. It checks the host, builds the image from config/, runs the policy check on the spec
-// and the image, creates and starts the sandbox, and verifies it. Re-running it creates nothing that already exists, but a failed
-// boundary check in the verify step stops the sandbox. sbx --help lists the commands and flags.
+// Run sbx init first. It writes the example config, embedded in sbx, into the user config dir where a file is missing, checks the
+// host, builds the image from that dir, runs the policy check on the spec and the image, creates and starts the sandbox, and verifies
+// it. Re-running it creates nothing that already exists, but a failed boundary check in the verify step stops the sandbox. To change
+// the sandbox, edit the user config dir and run sbx rebuild. sbx --help lists the commands and flags.
 package main
 
 import (

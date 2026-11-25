@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,9 +27,9 @@ var safeGit = []string{
 // state is what sbx records between runs in state.json.
 type state struct {
 	Name       string            `json:"name,omitempty"`        // the sandbox init or rebuild created
-	Clone      string            `json:"clone,omitempty"`       // the checkout init or rebuild ran from
-	RebuiltSHA string            `json:"rebuilt_sha,omitempty"` // the commit last rebuilt
-	Image      string            `json:"image,omitempty"`       // the image tag it was rebuilt with
+	ConfigDir  string            `json:"config_dir,omitempty"`  // the user config dir init ran with
+	ConfigHash string            `json:"config_hash,omitempty"` // the config dir's hash at the last verified create
+	Image      string            `json:"image,omitempty"`       // the image tag of the last verified create
 	Repos      map[string]string `json:"repos,omitempty"`       // the GitHub repo each guest repo ships to
 }
 
@@ -50,6 +49,29 @@ func (a *app) loadState() (state, error) {
 // saveState writes the state and reports whether it changed.
 func (a *app) saveState(st state) (bool, error) {
 	return hostfs.WriteJSON(a.statePath(), st)
+}
+
+// appliedPath is the sandbox.toml of the last verified create.
+func (a *app) appliedPath() string {
+	return filepath.Join(a.stateDir, "applied.toml")
+}
+
+// recordApplied records a verified create: its sandbox.toml as applied.toml, and the config dir's hash and the image in state.json.
+func (a *app) recordApplied(s *spec, hash, tag string) error {
+	if _, err := hostfs.WriteIfChanged(a.appliedPath(), s.raw); err != nil {
+		return err
+	}
+
+	st, err := a.loadState()
+	if err != nil {
+		return err
+	}
+
+	st.Name, st.ConfigHash, st.Image = a.name, hash, tag
+
+	_, err = a.saveState(st)
+
+	return err
 }
 
 // lock takes the lock on the state directory.
@@ -109,29 +131,17 @@ func (a *app) prompt(question string) string {
 	return strings.TrimSpace(line)
 }
 
-var errNotCheckout = errors.New("run sbx from the agent-sandbox checkout")
-
-// repoRoot returns the working directory, which contains config.
-func repoRoot() (string, error) {
-	dir, err := os.Getwd()
+// hostGitConfig returns the host's git setting key, such as user.name, or "" when it's unset.
+func (a *app) hostGitConfig(ctx context.Context, key string) string {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("finding the working directory: %w", err)
+		return ""
 	}
 
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			if _, err := os.Stat(filepath.Join(dir, specPath)); err != nil {
-				return "", errNotCheckout
-			}
-
-			return dir, nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", errNotCheckout
-		}
-
-		dir = parent
+	value, err := a.gitOut(ctx, home, "config", "--get", key)
+	if err != nil {
+		return ""
 	}
+
+	return value
 }

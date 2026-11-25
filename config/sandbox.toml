@@ -1,7 +1,7 @@
 # The sandbox spec
 
 name = "claude-sandbox"
-image = "claude-code-msb" # tag is git short SHA
+image = "claude-code-msb" # tagged with a hash of the build files
 cpus = 6
 memory_mib = 12288    # 12 GiB
 root_disk_mib = 16384 # 16 GiB
@@ -78,7 +78,7 @@ allow_ips = []
 #
 # To add a secret:
 # Copy the block below and change `name`, `allow`, `placeholder` (any string without "$") and `header_fields` (the header the service reads its token from). 
-# Add its hosts to allow_domains. Then merge, export the variable and run sbx rebuild.
+# Add its hosts to allow_domains. Then export the variable and run sbx rebuild.
 
 # The read-only GitHub token.
 [[secrets]]
